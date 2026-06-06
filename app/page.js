@@ -1,66 +1,82 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import styles from "./page.module.css";
+import {
+  IconArrowRight,
+  IconUsers,
+  IconShieldCheck,
+} from "@tabler/icons-react";
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Simulate initial loading time
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className={styles.loaderOverlay}>
+        <img
+          src="/logo.jpeg"
+          alt="PCA Logo Loading"
+          className={styles.loaderLogo}
         />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.js file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+        <div className={styles.loaderSpinner}></div>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.main}>
+      {/* Navigation */}
+      <nav className={styles.nav}>
+        <div className={styles.brand}>
+          <div className={styles.brandLogo}>
+            <img src="/logo.jpeg" alt="PCA Logo" style={{ width: "64px", height: "auto", mixBlendMode: "multiply", clipPath: "inset(3%)" }} />
+          </div>
+          <div className={styles.brandText}>
+            <span className={styles.brandName}>PMA</span>
+            <span className={styles.brandSlogan}>Nutrition & Tasty</span>
+          </div>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+      </nav>
+
+
+      {/* Portals Section */}
+      <section className={styles.portalsSection}>
+        <h2 className={styles.sectionTitle}>Choose Your Portal</h2>
+        <div className={styles.portalsGrid}>
+          <Link href="/employee/login" className={styles.portalCard}>
+            <div className={styles.portalIcon}><IconUsers size={32} /></div>
+            <div>
+              <div className={styles.portalTitle}>Employee Login</div>
+              <div className={styles.portalDesc}>
+                Access your tasks, updates, and performance insights.
+              </div>
+              <div className={styles.portalBtn}>Login <IconArrowRight size={14} /></div>
+            </div>
+          </Link>
+          <Link href="/admin/login" className={styles.portalCard}>
+            <div className={styles.portalIcon}><IconShieldCheck size={32} /></div>
+            <div>
+              <div className={styles.portalTitle}>Admin/Staff Login</div>
+              <div className={styles.portalDesc}>
+                Manage operations, teams, and factory performance.
+              </div>
+              <div className={styles.portalBtn}>Login <IconArrowRight size={14} /></div>
+            </div>
+          </Link>
         </div>
-      </main>
+      </section>
+
+
     </div>
   );
 }
