@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { IconShieldLock, IconLockOpen, IconArrowLeft, IconAlertCircle, IconCheck } from "@tabler/icons-react";
 
 export default function AdminLogin() {
@@ -24,15 +23,15 @@ export default function AdminLogin() {
     }
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+      if (loginError) throw loginError;
       setSuccessMsg("Authentication successful. Redirecting to dashboard...");
       setTimeout(() => router.push("/admin/dashboard"), 1000);
     } catch (err) {
-      let msg = "Authentication failed. Please try again.";
-      if (err.code === 'auth/user-not-found') msg = "User does not exist.";
-      else if (err.code === 'auth/wrong-password') msg = "Incorrect password.";
-      else if (err.code === 'auth/invalid-email') msg = "Invalid email address.";
-      else if (err.code === 'auth/invalid-credential') msg = "Invalid credentials provided.";
+      let msg = err.message || "Authentication failed. Please try again.";
       setErrorMsg(msg);
     }
   };

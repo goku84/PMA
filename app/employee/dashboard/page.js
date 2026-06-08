@@ -2,19 +2,7 @@
 
 import React, { useState, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  addDoc,
-  serverTimestamp,
-  updateDoc,
-  doc,
-} from "firebase/firestore";
-import { auth, db, storage } from "@/lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { supabase } from "@/lib/supabase";
 import {
   IconShield,
   IconLayoutDashboard,
@@ -44,6 +32,7 @@ import {
   IconX,
   IconMenu2,
   IconListCheck,
+  IconTarget,
 } from "@tabler/icons-react";
 
 const getLocalToday = () => {
@@ -65,8 +54,8 @@ export default function EmployeeDashboard() {
 
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calYear, setCalYear] = useState(new Date().getFullYear());
-  const [filterFrom, setFilterFrom] = useState("");
-  const [filterTo, setFilterTo] = useState("");
+  const [filterFrom, setFilterFrom] = useState(getLocalToday());
+  const [filterTo, setFilterTo] = useState(getLocalToday());
   const [filterStatus, setFilterStatus] = useState("all");
 
   const [callFilterFrom, setCallFilterFrom] = useState(getLocalToday());
@@ -75,11 +64,11 @@ export default function EmployeeDashboard() {
   const [callPage, setCallPage] = useState(1);
   const [expandedDates, setExpandedDates] = useState({});
 
-  const [shopFilterFrom, setShopFilterFrom] = useState("");
-  const [shopFilterTo, setShopFilterTo] = useState("");
+  const [shopFilterFrom, setShopFilterFrom] = useState(getLocalToday());
+  const [shopFilterTo, setShopFilterTo] = useState(getLocalToday());
   const [shopFilterName, setShopFilterName] = useState("");
-  const [repFilterFrom, setRepFilterFrom] = useState("");
-  const [repFilterTo, setRepFilterTo] = useState("");
+  const [repFilterFrom, setRepFilterFrom] = useState(getLocalToday());
+  const [repFilterTo, setRepFilterTo] = useState(getLocalToday());
   const [repFilterType, setRepFilterType] = useState("all");
 
   const [callsSnap, setCallsSnap] = useState([]);
@@ -88,16 +77,33 @@ export default function EmployeeDashboard() {
   const [attSnap, setAttSnap] = useState([]);
   const [tasksSnap, setTasksSnap] = useState([]);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [execSnap, setExecSnap] = useState([]);
+  const [execFilterFrom, setExecFilterFrom] = useState(getLocalToday());
+  const [execFilterTo, setExecFilterTo] = useState(getLocalToday());
+  const [execFilterSearch, setExecFilterSearch] = useState("");
 
   const [modalType, setModalType] = useState(null); // 'call', 'shop', 'report', 'task_execution'
+  const [productiveShops, setProductiveShops] = useState([{ name: "", location: "" }]);
+  const [actualName, setActualName] = useState("");
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
+    const fetchSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         router.push("/");
       } else {
-        setActiveUser(user);
-        fetchData(user);
+        setActiveUser(session.user);
+        fetchData(session.user);
+      }
+    };
+    fetchSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.push("/");
+      } else {
+        setActiveUser(session.user);
+        fetchData(session.user);
       }
     });
 
@@ -112,33 +118,39 @@ export default function EmployeeDashboard() {
     }, 1000);
 
     return () => {
-      unsubscribe();
+      subscription?.unsubscribe();
       clearInterval(timer);
     };
   }, [router]);
 
   const fetchData = async (user) => {
     try {
-      const callQ = query(collection(db, "calls"), where("loggedBy", "==", user.email));
-      const attQ = query(collection(db, "attendance"), where("email", "==", user.email));
-      const tasksQ = query(collection(db, "tasks"), where("employeeEmail", "==", user.email));
-      
-      const shopsQ = query(collection(db, "shops"), where("loggedBy", "==", user.email));
-      const repsQ = query(collection(db, "reports"), where("loggedBy", "==", user.email));
-
-      const [calls, shops, reps, att, tasksRes] = await Promise.all([
-        getDocs(callQ),
-        getDocs(shopsQ),
-        getDocs(repsQ),
-        getDocs(attQ),
-        getDocs(tasksQ),
+      const [calls, shops, reps, att, tasksRes, execsRes, employeeRes] = await Promise.all([
+        supabase.from('calls').select('*').eq('logged_by', user.email),
+        supabase.from('shops').select('*').eq('logged_by', user.email),
+        supabase.from('reports').select('*').eq('logged_by', user.email),
+        supabase.from('attendance').select('*').eq('email', user.email),
+        supabase.from('tasks').select('*').eq('employee_email', user.email),
+        supabase.from('task_executions').select('*').eq('employee_email', user.email),
+        supabase.from('employees').select('name').eq('email', user.email).single(),
       ]);
 
-      setCallsSnap(calls.docs.map((d) => d.data()));
-      setShopsSnap(shops.docs.map((d) => d.data()));
-      setRepsSnap(reps.docs.map((d) => d.data()));
-      setAttSnap(att.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setTasksSnap(tasksRes.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const mapCalls = calls.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapShops = shops.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapReps = reps.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapAtt = att.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapTasks = tasksRes.data?.map(d => ({ ...d, employeeEmail: d.employee_email, caseCount: d.case_count, completedCases: d.completed_cases, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapExecs = execsRes.data?.map(d => ({ ...d, taskId: d.task_id, agencyName: d.agency_name, productName: d.product_name, completedCases: d.completed_cases, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+
+      setCallsSnap(mapCalls);
+      setShopsSnap(mapShops);
+      setRepsSnap(mapReps);
+      setAttSnap(mapAtt);
+      setTasksSnap(mapTasks);
+      setExecSnap(mapExecs);
+      if (employeeRes.data && employeeRes.data.name) {
+        setActualName(employeeRes.data.name);
+      }
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -147,7 +159,7 @@ export default function EmployeeDashboard() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     router.push("/");
   };
 
@@ -157,17 +169,18 @@ export default function EmployeeDashboard() {
       realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
       const todayStr = realToday.toISOString().split("T")[0];
 
-      await addDoc(collection(db, "attendance"), {
-        uid: activeUser.uid,
-        employeeName: activeUser.email.split("@")[0],
+      const { error } = await supabase.from("attendance").insert({
+        employee_name: activeUser.email.split("@")[0],
         email: activeUser.email,
         date: todayStr,
-        in: serverTimestamp(),
-        inPhotoUrl: photoUrl || null,
-        out: null,
+        in_time: new Date().toISOString(),
+        in_photo_url: photoUrl || null,
+        out_time: null,
         status: "present",
         points: 0,
       });
+      
+      if (error) throw error;
       alert("Checked in successfully!");
       fetchData(activeUser);
     } catch (err) {
@@ -179,11 +192,13 @@ export default function EmployeeDashboard() {
     try {
       let earnedPoints = 0;
 
-      await updateDoc(doc(db, "attendance", docObj.id), {
-        out: serverTimestamp(),
-        outPhotoUrl: photoUrl || null,
+      const { error } = await supabase.from("attendance").update({
+        out_time: new Date().toISOString(),
+        out_photo_url: photoUrl || null,
         points: earnedPoints,
-      });
+      }).eq('id', docObj.id);
+
+      if (error) throw error;
       alert(`Checked out successfully!`);
       fetchData(activeUser);
     } catch (err) {
@@ -197,14 +212,28 @@ export default function EmployeeDashboard() {
 
     setIsUploading(true);
     try {
-      const storageRef = ref(storage, `attendance/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const photoUrl = await getDownloadURL(storageRef);
+      const fileName = `attendance/${Date.now()}_${file.name}`;
+      const { data, error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(fileName, file);
+        
+      if (uploadError) throw uploadError;
 
-      if (!todayAtt) {
+      const { data: { publicUrl } } = supabase.storage
+        .from('images')
+        .getPublicUrl(fileName);
+        
+      const photoUrl = publicUrl;
+
+      const realToday = new Date();
+      realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
+      const todayStr = realToday.toISOString().split("T")[0];
+      const todayAttRecord = attSnap.find((d) => d.date === todayStr);
+
+      if (!todayAttRecord) {
         await checkIn(photoUrl);
-      } else if (todayAtt && !todayAtt.out) {
-        await checkOut(todayAtt, photoUrl);
+      } else if (todayAttRecord && !todayAttRecord.out) {
+        await checkOut(todayAttRecord, photoUrl);
       }
     } catch (err) {
       alert("Error uploading photo: " + err.message);
@@ -217,18 +246,26 @@ export default function EmployeeDashboard() {
   const submitCallForm = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const beat = fd.get("beat_name");
+    const totalSales = fd.get("total_sales");
+
     try {
-      await addDoc(collection(db, "calls"), {
-        customerName: fd.get("c_name"),
-        phoneNumber: fd.get("c_phone") || "—",
-        status: fd.get("c_status"),
-        durationMinutes: parseInt(fd.get("c_dur")) || 5,
-        notes: fd.get("c_notes"),
-        loggedBy: activeUser.email,
-        timestamp: serverTimestamp(),
-      });
-      alert("Call written live to Cloud Firestore!");
+      const insertData = productiveShops.map(shop => ({
+        customer_name: beat,
+        phone_number: shop.location || "—",
+        status: shop.name || "—",
+        duration_minutes: 5,
+        notes: `Total Sales: ${totalSales}`,
+        logged_by: activeUser.email,
+        created_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase.from("calls").insert(insertData);
+      
+      if (error) throw error;
+      alert("Productive Call logged successfully!");
       setModalType(null);
+      setProductiveShops([{ name: "", location: "" }]);
       fetchData(activeUser);
     } catch (err) {
       alert(err.message);
@@ -243,21 +280,24 @@ export default function EmployeeDashboard() {
       let imageUrl = null;
       const photoFile = fd.get("s_photo");
       if (photoFile && photoFile.size > 0) {
-        const storageRef = ref(storage, `shops/${Date.now()}_${photoFile.name}`);
-        await uploadBytes(storageRef, photoFile);
-        imageUrl = await getDownloadURL(storageRef);
+        const fileName = `shops/${Date.now()}_${photoFile.name}`;
+        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, photoFile);
+        if (uploadError) throw uploadError;
+        const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(fileName);
+        imageUrl = publicUrl;
       }
 
-      await addDoc(collection(db, "shops"), {
-        shopName: fd.get("s_name"),
-        productDetail: fd.get("s_product") || "—",
+      const { error } = await supabase.from("shops").insert({
+        shop_name: fd.get("s_name"),
+        product_detail: fd.get("s_product") || "—",
         phone: fd.get("s_phone") || "—",
         address: fd.get("s_addr") || "—",
-        imageUrl: imageUrl,
+        image_url: imageUrl,
         status: "pending",
-        loggedBy: activeUser.email,
-        timestamp: serverTimestamp(),
+        logged_by: activeUser.email,
+        created_at: new Date().toISOString(),
       });
+      if (error) throw error;
       alert("Shop successfully added!");
       setModalType(null);
       fetchData(activeUser);
@@ -277,14 +317,15 @@ export default function EmployeeDashboard() {
         title: fd.get("r_title"),
         type: rType,
         content: fd.get("r_content"),
-        loggedBy: activeUser.email,
-        timestamp: serverTimestamp(),
+        logged_by: activeUser.email,
+        created_at: new Date().toISOString(),
       };
       if (rType === "daily") {
-        reportData.totalSalesAmount = Number(fd.get("r_sales")) || 0;
+        reportData.total_sales_amount = 0;
       }
-      await addDoc(collection(db, "reports"), reportData);
-      alert("Report written directly to Firestore streams!");
+      const { error } = await supabase.from("reports").insert(reportData);
+      if (error) throw error;
+      alert("Report successfully filed!");
       setModalType(null);
       setReportFormType("daily");
       fetchData(activeUser);
@@ -299,24 +340,27 @@ export default function EmployeeDashboard() {
     const completed = parseInt(fd.get("t_cases"), 10) || 0;
     try {
       const executionData = {
-        taskId: selectedTask.id,
-        agencyName: fd.get("t_agency"),
-        productName: fd.get("t_product"),
-        casesCompleted: completed,
-        employeeEmail: activeUser.email,
-        timestamp: serverTimestamp(),
+        task_id: selectedTask.id,
+        agency_name: fd.get("t_agency"),
+        product_name: fd.get("t_product"),
+        completed_cases: completed,
+        employee_email: activeUser.email,
+        created_at: new Date().toISOString(),
       };
-      
-      await addDoc(collection(db, "task_executions"), executionData);
-      
+
+      const { error: execError } = await supabase.from("task_executions").insert(executionData);
+      if (execError) throw execError;
+
       const newCompleted = (selectedTask.completedCases || 0) + completed;
       const newStatus = newCompleted >= selectedTask.caseCount ? "completed" : "in progress";
-      
-      await updateDoc(doc(db, "tasks", selectedTask.id), {
-        completedCases: newCompleted,
+
+      const { error: updateError } = await supabase.from("tasks").update({
+        completed_cases: newCompleted,
         status: newStatus
-      });
+      }).eq('id', selectedTask.id);
       
+      if (updateError) throw updateError;
+
       alert("Task execution logged successfully!");
       setModalType(null);
       setSelectedTask(null);
@@ -327,7 +371,7 @@ export default function EmployeeDashboard() {
   };
 
   const attPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
-  
+
   const callsByDate = {};
   callsSnap.forEach(c => {
     if (c.timestamp && c.timestamp.seconds) {
@@ -356,13 +400,23 @@ export default function EmployeeDashboard() {
     }
   });
   const shopPoints = Math.floor(monthlyShopsCount / 100) * 50;
-  const totalPoints = attPoints + callTotalPoints + repPoints + shopPoints;
+  
+  let targetPoints = 0;
+  tasksSnap.forEach(t => {
+    if (t.caseCount && t.caseCount > 0) {
+      const completionRatio = (t.completedCases || 0) / t.caseCount;
+      if (completionRatio >= 1.0) targetPoints += 100;
+      else if (completionRatio >= 0.9) targetPoints += 75;
+    }
+  });
+
+  const totalPoints = attPoints + callTotalPoints + repPoints + shopPoints + targetPoints;
 
   const renderAllocatedTasks = () => {
-    const tasks = [...tasksSnap].sort((a,b) => {
-       const tA = a.timestamp ? a.timestamp.seconds : 0;
-       const tB = b.timestamp ? b.timestamp.seconds : 0;
-       return tB - tA;
+    const tasks = [...tasksSnap].sort((a, b) => {
+      const tA = a.timestamp ? a.timestamp.seconds : 0;
+      const tB = b.timestamp ? b.timestamp.seconds : 0;
+      return tB - tA;
     });
 
     return (
@@ -375,7 +429,7 @@ export default function EmployeeDashboard() {
               <tr>
                 <th>Date Assigned</th>
                 <th>Target Cases</th>
-                <th>Completed</th>
+                <th>Progress</th>
                 <th>Notes</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -389,11 +443,19 @@ export default function EmployeeDashboard() {
                     dStr = new Date(t.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
                   }
                   const comp = t.completedCases || 0;
+                  const ratio = t.caseCount > 0 ? Math.min(100, Math.round((comp / t.caseCount) * 100)) : 0;
                   return (
                     <tr key={i}>
                       <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
                       <td><b>{t.caseCount}</b></td>
-                      <td style={{ color: comp >= t.caseCount ? "var(--ok)" : "inherit" }}><b>{comp}</b></td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div style={{ flex: 1, height: "6px", background: "var(--bdr)", borderRadius: "3px", overflow: "hidden" }}>
+                            <div style={{ width: `${ratio}%`, height: "100%", background: ratio >= 100 ? "var(--ok)" : "var(--ind)" }}></div>
+                          </div>
+                          <b style={{ fontSize: "12px", color: ratio >= 100 ? "var(--ok)" : "var(--tx)" }}>{comp}</b>
+                        </div>
+                      </td>
                       <td>{t.notes}</td>
                       <td><span className={`bdg ${t.status === 'completed' ? 'b-ok' : 'b-am'}`}>{t.status}</span></td>
                       <td>
@@ -436,11 +498,14 @@ export default function EmployeeDashboard() {
     }
     const shiftPercent = Math.min(100, (shiftHrs / 4) * 100);
 
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
     return (
       <>
         <div style={{ marginBottom: "22px" }}>
           <h2 style={{ fontSize: "22px", fontWeight: 800 }}>
-            Good Afternoon, {userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'Agent'}! 👋
+            {greeting}, {userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'Agent'}! 👋
           </h2>
           <p style={{ color: "var(--tx2)" }}>
             Here's your productivity overview for today.
@@ -472,7 +537,7 @@ export default function EmployeeDashboard() {
             <div className="ks">{todayAtt ? "Checked in today" : "Not checked in"}</div>
           </div>
         </div>
-        
+
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px" }}>
           <div className="ach" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", margin: 0, padding: "30px", background: "var(--sur)", borderRadius: "12px", border: "1px solid var(--bd)" }}>
             <div style={{ textAlign: "center", width: "100%" }}>
@@ -483,7 +548,7 @@ export default function EmployeeDashboard() {
                   <button className="btn" disabled style={{ background: "rgba(255,255,255,0.1)", color: "var(--tx2)", padding: "12px 0", borderRadius: "30px", fontWeight: 600, width: "100%" }}>Shift Completed for Today</button>
                 ) : (
                   <div style={{ position: "relative", width: "100%" }}>
-                    <input type="file" accept="image/*" capture="environment" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
+                    <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
                     <button className="btn" style={{ background: "var(--no)", color: "#fff", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
                       <IconLogout size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check Out"}
                     </button>
@@ -491,13 +556,13 @@ export default function EmployeeDashboard() {
                 )
               ) : (
                 <div style={{ position: "relative", width: "100%" }}>
-                  <input type="file" accept="image/*" capture="environment" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
+                  <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
                   <button className="btn" style={{ background: "#fff", color: "var(--ok)", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
                     <IconLogin size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check In"}
                   </button>
                 </div>
               )}
-              
+
               <div style={{ marginTop: "40px", textAlign: "left" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--tx2)", marginBottom: "8px" }}>
                   <span>Shift Progress</span>
@@ -509,13 +574,13 @@ export default function EmployeeDashboard() {
               </div>
             </div>
           </div>
-          
+
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", margin: 0 }}>
               <div className="ctit">Quick Actions</div>
               <p style={{ color: "var(--tx2)", marginBottom: "16px", fontSize: "13px" }}>Create new records for your daily activities.</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, justifyContent: "center" }}>
-                <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("call")}><IconPhoneCall size={18} /> Log Call</button>
+                <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("call")}><IconPhoneCall size={18} /> Log Productive Call</button>
                 <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("shop")}><IconBuildingStore size={18} /> Add Shop</button>
                 <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => { setModalType("report"); setReportFormType("daily"); }}><IconFileReport size={18} /> New Report</button>
               </div>
@@ -529,7 +594,7 @@ export default function EmployeeDashboard() {
   const renderAttendance = () => {
     const localNow = new Date();
     const todayStart = new Date(localNow.getFullYear(), localNow.getMonth(), localNow.getDate());
-    
+
     const realToday = new Date();
     realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
     const todayStr = realToday.toISOString().split("T")[0];
@@ -567,6 +632,7 @@ export default function EmployeeDashboard() {
 
     const getDayStatus = (d) => {
       if (isFuture(d)) return null;
+      if (new Date(calYear, calMonth, d).getDay() === 0) return "Holiday";
       const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const rec = attSnap.find((a) => a.date === dateStr);
       if (rec) {
@@ -587,7 +653,7 @@ export default function EmployeeDashboard() {
       if (filterTo && d.date > filterTo) return false;
       if (filterStatus !== "all" && d.status !== filterStatus) return false;
       return true;
-    }).sort((a,b) => new Date(b.date) - new Date(a.date));
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
     return (
       <>
@@ -614,20 +680,22 @@ export default function EmployeeDashboard() {
                 if (status === "Present") { bg = "rgba(76, 175, 80, 0.15)"; color = "var(--ok)"; }
                 else if (status === "Absent") { bg = "rgba(244, 67, 54, 0.15)"; color = "var(--no)"; }
                 else if (status === "Partial") { bg = "rgba(255, 152, 0, 0.15)"; color = "var(--am)"; }
+                else if (status === "Holiday") { bg = "rgba(148, 163, 184, 0.15)"; color = "var(--tx2)"; }
                 return (
                   <div key={d} style={{ padding: "10px 2px", textAlign: "center", background: bg, minHeight: "75px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: isToday(d) ? "2px solid var(--ind)" : "none" }}>
                     <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--tx)" }}>{String(d).padStart(2, "0")}</div>
                     {status && <div style={{ fontSize: "11px", color: color, marginTop: "4px", fontWeight: 600, wordBreak: "break-word" }}>{status}</div>}
-              
-      </div>
-    );
-  })}
+
+                  </div>
+                );
+              })}
             </div>
           </div>
           <div style={{ display: "flex", gap: "12px", marginTop: "16px", flexWrap: "wrap" }}>
             <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(76, 175, 80, 0.15)", color: "var(--ok)", fontWeight: 600 }}>Present</span>
             <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(255, 152, 0, 0.15)", color: "var(--am)", fontWeight: 600 }}>Partial</span>
             <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(244, 67, 54, 0.15)", color: "var(--no)", fontWeight: 600 }}>Absent</span>
+            <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(148, 163, 184, 0.15)", color: "var(--tx2)", fontWeight: 600 }}>Holiday</span>
           </div>
         </div>
 
@@ -697,10 +765,10 @@ export default function EmployeeDashboard() {
       if (callFilterTo && dateStr && dateStr > callFilterTo) return false;
       if (callFilterCustomer && d.customerName && !d.customerName.toLowerCase().includes(callFilterCustomer.toLowerCase())) return false;
       return true;
-    }).sort((a,b) => {
-       const tA = a.timestamp ? a.timestamp.seconds : 0;
-       const tB = b.timestamp ? b.timestamp.seconds : 0;
-       return tB - tA;
+    }).sort((a, b) => {
+      const tA = a.timestamp ? a.timestamp.seconds : 0;
+      const tB = b.timestamp ? b.timestamp.seconds : 0;
+      return tB - tA;
     });
 
     const groupedCalls = {};
@@ -712,7 +780,7 @@ export default function EmployeeDashboard() {
       if (!groupedCalls[dStr]) groupedCalls[dStr] = [];
       groupedCalls[dStr].push(d);
     });
-    
+
     const dateKeys = Object.keys(groupedCalls);
     const itemsPerPage = 7;
     const totalPages = Math.ceil(dateKeys.length / itemsPerPage);
@@ -721,7 +789,7 @@ export default function EmployeeDashboard() {
     const realToday = new Date();
     realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
     const todayStr = realToday.toISOString().split("T")[0];
-    
+
     let callsTodayCount = 0;
     callsSnap.forEach(c => {
       if (c.timestamp && c.timestamp.seconds) {
@@ -732,46 +800,35 @@ export default function EmployeeDashboard() {
         }
       }
     });
-    
+
     let callPoints = 0;
     if (callsTodayCount >= 20) callPoints = 5;
     else if (callsTodayCount >= 16) callPoints = 3;
-
-    let avgDur = 0;
-    if (callsSnap.length > 0) {
-      avgDur = Math.round(callsSnap.reduce((acc, curr) => acc + (curr.durationMinutes || 5), 0) / callsSnap.length);
-    }
 
     return (
       <>
         <div className="kg">
           <div className="kc gd">
             <div className="ki"><IconPhone /></div>
-            <div className="kl">Calls Today</div>
+            <div className="kl">Productive Calls Today</div>
             <div className="kv">{callsTodayCount}</div>
             <div className="ks">Target: 16 (min)</div>
           </div>
           <div className="kc">
-            <div className="ki"><IconClock /></div>
-            <div className="kl">Avg Duration</div>
-            <div className="kv">{avgDur}m</div>
-            <div className="ks">Per call</div>
-          </div>
-          <div className="kc">
             <div className="ki"><IconStar /></div>
-            <div className="kl">Call Points</div>
+            <div className="kl">Productive Points</div>
             <div className="kv">{callPoints}</div>
             <div className="ks">16=3, 20=5 pts</div>
           </div>
         </div>
-        
+
         <div className="card">
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-            <span>Call History</span>
+            <span>Productive Calls History</span>
             <div className="filter-row">
-              <input type="text" placeholder="Search Customer" value={callFilterCustomer} onChange={(e) => {setCallFilterCustomer(e.target.value); setCallPage(1);}} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
-              <input type="date" value={callFilterFrom} onChange={(e) => {setCallFilterFrom(e.target.value); setCallPage(1);}} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
-              <input type="date" value={callFilterTo} onChange={(e) => {setCallFilterTo(e.target.value); setCallPage(1);}} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
+              <input type="text" placeholder="Search Beat Area" value={callFilterCustomer} onChange={(e) => { setCallFilterCustomer(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
+              <input type="date" value={callFilterFrom} onChange={(e) => { setCallFilterFrom(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
+              <input type="date" value={callFilterTo} onChange={(e) => { setCallFilterTo(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
             </div>
           </div>
           <div className="tw">
@@ -779,49 +836,63 @@ export default function EmployeeDashboard() {
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Customer</th>
-                  <th>Phone</th>
-                  <th>Status</th>
-                  <th>Duration</th>
-                  <th>Notes</th>
+                  <th>Beat (Area)</th>
+                  <th>Shop Location</th>
+                  <th>Shop Name</th>
+                  <th>Total Sales</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedDates.length > 0 ? (
                   paginatedDates.map((dStr, i) => {
                     const callsInDate = groupedCalls[dStr];
+                    // Group by beat
+                    const groupedByBeat = {};
+                    callsInDate.forEach(c => {
+                      const beat = c.customerName || "Unknown Beat";
+                      if (!groupedByBeat[beat]) groupedByBeat[beat] = [];
+                      groupedByBeat[beat].push(c);
+                    });
                     const isExpanded = expandedDates[dStr];
                     return (
                       <Fragment key={i}>
-                        <tr onClick={() => setExpandedDates(prev => ({...prev, [dStr]: !prev[dStr]}))} style={{ cursor: "pointer", background: "var(--sur2)" }}>
+                        <tr onClick={() => setExpandedDates(prev => ({ ...prev, [dStr]: !prev[dStr] }))} style={{ cursor: "pointer", background: "var(--sur2)" }}>
                           <td><b>{dStr}</b></td>
-                          <td colSpan="4"><b>{callsInDate.length} Calls Logged</b></td>
+                          <td colSpan="3"><b>{callsInDate.length} Productive Calls Logged</b></td>
                           <td style={{ textAlign: "right" }}>{isExpanded ? "▲" : "▼"}</td>
                         </tr>
-                        {isExpanded && callsInDate.map((d, j) => (
-                          <tr key={`${i}-${j}`} style={{ background: "var(--sur)" }}>
-                            <td style={{ paddingLeft: "30px", fontSize: "13px", color: "var(--tx2)" }}>—</td>
-                            <td><b>{d.customerName}</b></td>
-                            <td>{d.phoneNumber}</td>
-                            <td><span className="bdg b-ok">{d.status}</span></td>
-                            <td>{d.durationMinutes}m</td>
-                            <td style={{ maxWidth: "150px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.notes}>{d.notes || "—"}</td>
-                          </tr>
+                        {isExpanded && Object.keys(groupedByBeat).map((beat, bIdx) => (
+                          <Fragment key={`${i}-beat-${bIdx}`}>
+                            <tr style={{ background: "var(--sur)" }}>
+                              <td style={{ paddingLeft: "30px", fontSize: "13px", color: "var(--tx2)" }}>—</td>
+                              <td colSpan="3" style={{ color: "var(--ind)", fontWeight: 600 }}>📍 Beat: {beat}</td>
+                              <td style={{ fontWeight: 600, color: "var(--tx)" }}>{groupedByBeat[beat][0]?.notes || "—"}</td>
+                            </tr>
+                            {groupedByBeat[beat].map((d, j) => (
+                              <tr key={`${i}-beat-${bIdx}-${j}`} style={{ background: "var(--sur)" }}>
+                                <td></td>
+                                <td style={{ color: "var(--tx3)", fontSize: "12px", paddingLeft: "20px" }}>↳ Shop</td>
+                                <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.phoneNumber}</td>
+                                <td><span className="bdg b-ok">{d.status}</span></td>
+                                <td style={{ color: "var(--tx3)" }}>—</td>
+                              </tr>
+                            ))}
+                          </Fragment>
                         ))}
                       </Fragment>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>
-                      No call records found matching criteria.
+                    <td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>
+                      No productive call records found matching criteria.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-          
+
           {totalPages > 1 && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "20px" }}>
               <button className="btn" disabled={callPage === 1} onClick={() => setCallPage(prev => Math.max(1, prev - 1))} style={{ padding: "6px 12px", background: "var(--sur2)", color: "var(--tx)" }}>Previous</button>
@@ -846,10 +917,10 @@ export default function EmployeeDashboard() {
       if (shopFilterTo && dateStr && dateStr > shopFilterTo) return false;
       if (shopFilterName && d.shopName && !d.shopName.toLowerCase().includes(shopFilterName.toLowerCase())) return false;
       return true;
-    }).sort((a,b) => {
-       const tA = a.timestamp ? a.timestamp.seconds : 0;
-       const tB = b.timestamp ? b.timestamp.seconds : 0;
-       return tB - tA;
+    }).sort((a, b) => {
+      const tA = a.timestamp ? a.timestamp.seconds : 0;
+      const tB = b.timestamp ? b.timestamp.seconds : 0;
+      return tB - tA;
     });
 
     const verifiedCount = shopsSnap.filter(s => s.status === 'verified').length;
@@ -858,11 +929,14 @@ export default function EmployeeDashboard() {
     return (
       <>
         <div className="kg" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <div className="kc ok">
+          <div className="kc ok" style={{ position: "relative", overflow: "hidden" }}>
             <div className="ki"><IconDiscountCheck /></div>
             <div className="kl">Verified Shops</div>
             <div className="kv">{verifiedCount}</div>
-            <div className="ks">Target: 100/mo = 50pts</div>
+            <div className="ks">Monthly Progress (Target: 100)</div>
+            <div style={{ marginTop: "12px", background: "var(--bdr)", height: "6px", borderRadius: "4px", overflow: "hidden", position: "relative" }}>
+              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.min(100, (verifiedCount / 100) * 100)}%`, background: "var(--ok)", transition: "width 0.5s ease" }}></div>
+            </div>
           </div>
           <div className="kc b-am">
             <div className="ki"><IconHourglass /></div>
@@ -929,10 +1003,10 @@ export default function EmployeeDashboard() {
       if (repFilterTo && dateStr && dateStr > repFilterTo) return false;
       if (repFilterType !== "all" && d.type !== repFilterType) return false;
       return true;
-    }).sort((a,b) => {
-       const tA = a.timestamp ? a.timestamp.seconds : 0;
-       const tB = b.timestamp ? b.timestamp.seconds : 0;
-       return tB - tA;
+    }).sort((a, b) => {
+      const tA = a.timestamp ? a.timestamp.seconds : 0;
+      const tB = b.timestamp ? b.timestamp.seconds : 0;
+      return tB - tA;
     });
 
     const approvedCount = repsSnap.filter(r => r.status === "approved").length;
@@ -955,12 +1029,12 @@ export default function EmployeeDashboard() {
             <div className="kv">{approvedCount}</div>
           </div>
           <div className="kc" style={{ borderTop: "3px solid var(--am)" }}>
-            <div className="ki"><IconHourglass style={{ color: "var(--am)" }}/></div>
+            <div className="ki"><IconHourglass style={{ color: "var(--am)" }} /></div>
             <div className="kl">Pending</div>
             <div className="kv">{pendingCount}</div>
           </div>
           <div className="kc" style={{ borderTop: "3px solid var(--no)" }}>
-            <div className="ki"><IconX style={{ color: "var(--no)" }}/></div>
+            <div className="ki"><IconX style={{ color: "var(--no)" }} /></div>
             <div className="kl">Rejected</div>
             <div className="kv">{rejectedCount}</div>
           </div>
@@ -1024,6 +1098,100 @@ export default function EmployeeDashboard() {
     );
   };
 
+  const renderExecutions = () => {
+    const filteredExecs = execSnap.filter(d => {
+      let dateStr = "";
+      if (d.timestamp && d.timestamp.seconds) {
+        const dt = new Date(d.timestamp.seconds * 1000);
+        dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+        dateStr = dt.toISOString().split("T")[0];
+      }
+      if (execFilterFrom && dateStr && dateStr < execFilterFrom) return false;
+      if (execFilterTo && dateStr && dateStr > execFilterTo) return false;
+      if (execFilterSearch && d.agencyName && !d.agencyName.toLowerCase().includes(execFilterSearch.toLowerCase())) return false;
+      return true;
+    }).sort((a, b) => {
+      const tA = a.timestamp ? a.timestamp.seconds : 0;
+      const tB = b.timestamp ? b.timestamp.seconds : 0;
+      return tB - tA;
+    });
+
+    let totalCases = 0;
+    filteredExecs.forEach(e => totalCases += (e.completedCases || 0));
+
+    return (
+      <>
+        <div className="kg">
+          <div className="kc gd">
+            <div className="ki"><IconListCheck /></div>
+            <div className="kl">Executions Logged</div>
+            <div className="kv">{filteredExecs.length}</div>
+            <div className="ks">Target operations</div>
+          </div>
+          <div className="kc ok">
+            <div className="ki"><IconStar /></div>
+            <div className="kl">Cases Completed</div>
+            <div className="kv">{totalCases}</div>
+            <div className="ks">Total individual cases</div>
+          </div>
+          <div className="kc" style={{ borderLeft: "4px solid var(--pur)", background: "var(--sur2)" }}>
+            <div className="ki" style={{ color: "var(--pur)" }}><IconStar /></div>
+            <div className="kl">Points Earned</div>
+            <div className="kv">{targetPoints}</div>
+            <div className="ks">Bonus target pts</div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+            <span>Target Execution History</span>
+            <div className="filter-row">
+              <input type="text" placeholder="Search Agency" value={execFilterSearch} onChange={(e) => setExecFilterSearch(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
+              <input type="date" value={execFilterFrom} onChange={(e) => setExecFilterFrom(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
+              <input type="date" value={execFilterTo} onChange={(e) => setExecFilterTo(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
+            </div>
+          </div>
+          <div className="tw">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date Logged</th>
+                  <th>Agency Name</th>
+                  <th>Product Details</th>
+                  <th>Cases Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredExecs.length > 0 ? (
+                  filteredExecs.map((d, i) => {
+                    let dStr = "—";
+                    if (d.timestamp && d.timestamp.seconds) {
+                      dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                    }
+                    return (
+                      <tr key={i}>
+                        <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
+                        <td><b>{d.agencyName}</b></td>
+                        <td>{d.productName}</td>
+                        <td><b>{d.completedCases}</b> Cases</td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="4" style={{ textAlign: "center", color: "var(--tx3)" }}>
+                      No target execution logs found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   const renderPoints = () => (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <div className="card" style={{ textAlign: "center", padding: "32px" }}>
@@ -1037,30 +1205,39 @@ export default function EmployeeDashboard() {
           🥈 Rank #2 of 5
         </span>
       </div>
-      <div className="card">
-        <div className="ctit">Points Breakdown Map</div>
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-            <span>Attendance Track</span>
-            <b>{attPoints} pts</b>
+      <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+        <div className="ctit" style={{ marginBottom: "16px" }}>Points Breakdown Map</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, justifyContent: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconPhoneCall size={18} /></div>
+              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Productive Calls</span>
+            </div>
+            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{callTotalPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
           </div>
-        </div>
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-            <span>Call Conversions</span>
-            <b>{callTotalPoints} pts</b>
+          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconFileReport size={18} /></div>
+              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Weekly Submissions</span>
+            </div>
+            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{repPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
           </div>
-        </div>
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-            <span>Weekly Submissions</span>
-            <b>{repPoints} pts</b>
+          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconBuildingStore size={18} /></div>
+              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Shop Indexing (Monthly)</span>
+            </div>
+            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{shopPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
           </div>
-        </div>
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-            <span>Shop Indexing (Monthly)</span>
-            <b>{shopPoints} pts</b>
+          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconTarget size={18} /></div>
+              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Target Tasks Bonus</span>
+            </div>
+            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{targetPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
           </div>
         </div>
       </div>
@@ -1074,17 +1251,17 @@ export default function EmployeeDashboard() {
       </div>
     );
 
-  const userName = activeUser ? activeUser.email.split("@")[0] : "Loading...";
-  const userInitials = activeUser ? activeUser.email.substring(0, 2).toUpperCase() : "AM";
-  const pageTitle = activeTab === "logs" 
-    ? "Logs - " + (activeLogTab.charAt(0).toUpperCase() + activeLogTab.slice(1)) 
+  const userName = actualName || (activeUser ? activeUser.email.split("@")[0] : "Loading...");
+  const userInitials = actualName ? actualName.substring(0, 2).toUpperCase() : (activeUser ? activeUser.email.substring(0, 2).toUpperCase() : "AM");
+  const pageTitle = activeTab === "logs"
+    ? "Logs - " + (activeLogTab.charAt(0).toUpperCase() + activeLogTab.slice(1))
     : activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
 
   return (
     <div className="shell">
       {isMobileMenuOpen && (
-        <div 
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 90 }} 
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 90 }}
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
@@ -1095,7 +1272,7 @@ export default function EmployeeDashboard() {
               <img src="/logo.jpeg" alt="PCA Logo" style={{ width: "40px", height: "auto", mixBlendMode: "multiply", clipPath: "inset(2%)" }} />
             </div>
             <div>
-              <div className="bname">PMA FieldOps</div>
+              <div className="bname">Prabha Food Industries</div>
               <div className="btag">Employee Portal</div>
             </div>
           </div>
@@ -1132,8 +1309,8 @@ export default function EmployeeDashboard() {
       <div className="main">
         <header className="topbar">
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <button 
-              className="mobile-menu-btn" 
+            <button
+              className="mobile-menu-btn"
               onClick={() => setIsMobileMenuOpen(true)}
               style={{ background: "none", border: "none", color: "var(--tx)", cursor: "pointer", alignItems: "center", justifyContent: "center" }}
             >
@@ -1155,15 +1332,17 @@ export default function EmployeeDashboard() {
             <>
               <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid var(--bdr)", paddingBottom: "15px", flexWrap: "wrap" }}>
                 <button className={`btn ${activeLogTab === "attendance" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("attendance")} style={activeLogTab !== "attendance" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Attendance</button>
-                <button className={`btn ${activeLogTab === "calls" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("calls")} style={activeLogTab !== "calls" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Call Logs</button>
+                <button className={`btn ${activeLogTab === "calls" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("calls")} style={activeLogTab !== "calls" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Productive Calls</button>
                 <button className={`btn ${activeLogTab === "shops" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("shops")} style={activeLogTab !== "shops" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Shops</button>
                 <button className={`btn ${activeLogTab === "reports" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("reports")} style={activeLogTab !== "reports" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Reports</button>
+                <button className={`btn ${activeLogTab === "executions" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("executions")} style={activeLogTab !== "executions" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Targets</button>
                 <button className={`btn ${activeLogTab === "points" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("points")} style={activeLogTab !== "points" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Points</button>
               </div>
               {activeLogTab === "attendance" && renderAttendance()}
               {activeLogTab === "calls" && renderCalls()}
               {activeLogTab === "shops" && renderShops()}
               {activeLogTab === "reports" && renderReports()}
+              {activeLogTab === "executions" && renderExecutions()}
               {activeLogTab === "points" && renderPoints()}
             </>
           )}
@@ -1176,19 +1355,39 @@ export default function EmployeeDashboard() {
             {modalType === "call" && (
               <form onSubmit={submitCallForm}>
                 <div className="mh">
-                  <div>Log Customer Interaction</div>
-                  <button type="button" onClick={() => setModalType(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
+                  <div>Log Productive Call (Beat)</div>
+                  <button type="button" onClick={() => { setModalType(null); setProductiveShops([{ name: "", location: "" }]); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-                  <div className="fg"><label>Customer Identity *</label><input type="text" name="c_name" placeholder="Ravi Kumar" required /></div>
-                  <div className="fg"><label>Phone Number</label><input type="tel" name="c_phone" placeholder="9876543210" pattern="[0-9]*" onInput={(e) => e.target.value = e.target.value.replace(/[^0-9]/g, '')} /></div>
+                <div className="fg">
+                  <label>Beat (Area) *</label>
+                  <input type="text" name="beat_name" placeholder="e.g. Chennai Inner Area" required />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-                  <div className="fg"><label>Status</label><select name="c_status"><option value="productive">Productive</option><option value="follow-up">Follow-up</option></select></div>
-                  <div className="fg"><label>Duration (mins)</label><input type="number" name="c_dur" defaultValue="5" /></div>
+                <div style={{ margin: "16px 0", borderTop: "1px solid var(--bdr)", borderBottom: "1px solid var(--bdr)", padding: "16px 0", maxHeight: "300px", overflowY: "auto" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                    <label style={{ margin: 0 }}>Productive Shops Visited</label>
+                    <button type="button" className="btn" style={{ padding: "4px 10px", fontSize: "12px", background: "var(--sur2)", color: "var(--tx)" }} onClick={() => setProductiveShops([...productiveShops, { name: "", location: "" }])}>
+                      + Add Shop
+                    </button>
+                  </div>
+                  {productiveShops.map((shop, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "10px", marginBottom: "10px", alignItems: "end" }}>
+                      <div className="fg" style={{ margin: 0 }}>
+                        <input type="text" placeholder="Shop Name" value={shop.name} onChange={(e) => { const newS = [...productiveShops]; newS[i].name = e.target.value; setProductiveShops(newS); }} required />
+                      </div>
+                      <div className="fg" style={{ margin: 0 }}>
+                        <input type="text" placeholder="Shop Location" value={shop.location} onChange={(e) => { const newS = [...productiveShops]; newS[i].location = e.target.value; setProductiveShops(newS); }} required />
+                      </div>
+                      <button type="button" className="btn" style={{ background: "var(--no)", color: "#fff", padding: "10px", height: "42px" }} onClick={() => { if (productiveShops.length > 1) { const newS = [...productiveShops]; newS.splice(i, 1); setProductiveShops(newS); } }}>
+                        <IconX size={16} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <div className="fg"><label>Notes</label><textarea name="c_notes" style={{ width: "100%", minHeight: "60px", borderRadius: "8px", padding: "10px", border: "1.5px solid var(--bdr)" }}></textarea></div>
-                <button type="submit" className="btn btn-p" style={{ width: "100%" }}>Write Log Entry</button>
+                <div className="fg">
+                  <label>Total Sales Value *</label>
+                  <input type="number" name="total_sales" placeholder="e.g. 5000" required min="0" />
+                </div>
+                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Submit Productive Call</button>
               </form>
             )}
 
@@ -1222,12 +1421,7 @@ export default function EmployeeDashboard() {
                 </div>
                 <div className="fg"><label>Report Title Context *</label><input type="text" name="r_title" placeholder="Daily Report — May 28" required /></div>
                 <div className="fg"><label>Type Scope</label><select name="r_type" value={reportFormType} onChange={(e) => setReportFormType(e.target.value)}><option value="daily">Daily Log Record</option><option value="weekly">Weekly Compilation Grid</option></select></div>
-                {reportFormType === "daily" && (
-                  <div className="fg">
-                    <label>Total Sales Amount *</label>
-                    <input type="number" name="r_sales" placeholder="e.g. 5000" required />
-                  </div>
-                )}
+                {reportFormType === "daily" && null}
                 <div className="fg"><label>Detailed Core Narrative Content</label><textarea name="r_content" required style={{ width: "100%", minHeight: "80px", borderRadius: "8px", padding: "10px", border: "1.5px solid var(--bdr)" }}></textarea></div>
                 <button type="submit" className="btn btn-p" style={{ width: "100%" }}>Transmit Report Log</button>
               </form>

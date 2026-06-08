@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { collection, getDocs, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from "firebase/firestore";
-import { app, auth, db } from "@/lib/firebase";
+import { supabase, supabaseAdminAuth } from "@/lib/supabase";
 import styles from "./dashboard.module.css";
 import {
   IconShield,
@@ -24,6 +22,12 @@ import {
   IconMenu2,
   IconListCheck,
 } from "@tabler/icons-react";
+
+const getLocalToday = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().split("T")[0];
+};
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -50,56 +54,95 @@ export default function AdminDashboard() {
   const [newTask, setNewTask] = useState({ employeeEmail: "", caseCount: "", notes: "" });
   const [tasksSnap, setTasksSnap] = useState(null);
   const [empFilterSearch, setEmpFilterSearch] = useState("");
-  const [attFilterFrom, setAttFilterFrom] = useState("");
-  const [attFilterTo, setAttFilterTo] = useState("");
+  const [attFilterFrom, setAttFilterFrom] = useState(getLocalToday());
+  const [attFilterTo, setAttFilterTo] = useState(getLocalToday());
   const [attFilterSearch, setAttFilterSearch] = useState("");
-  const [callFilterFrom, setCallFilterFrom] = useState("");
-  const [callFilterTo, setCallFilterTo] = useState("");
+  const [callFilterFrom, setCallFilterFrom] = useState(getLocalToday());
+  const [callFilterTo, setCallFilterTo] = useState(getLocalToday());
   const [callFilterSearch, setCallFilterSearch] = useState("");
   const [expandedEmp, setExpandedEmp] = useState({});
-  const [shopFilterFrom, setShopFilterFrom] = useState("");
-  const [shopFilterTo, setShopFilterTo] = useState("");
+  const [shopFilterFrom, setShopFilterFrom] = useState(getLocalToday());
+  const [shopFilterTo, setShopFilterTo] = useState(getLocalToday());
   const [shopFilterSearch, setShopFilterSearch] = useState("");
   const [expandedShopEmp, setExpandedShopEmp] = useState({});
-  const [repFilterFrom, setRepFilterFrom] = useState("");
-  const [repFilterTo, setRepFilterTo] = useState("");
+  const [repFilterFrom, setRepFilterFrom] = useState(getLocalToday());
+  const [repFilterTo, setRepFilterTo] = useState(getLocalToday());
   const [repFilterSearch, setRepFilterSearch] = useState("");
   const [expandedRepEmp, setExpandedRepEmp] = useState({});
+  const [chartEmpFilter, setChartEmpFilter] = useState("all");
+  const [employeesSnap, setEmployeesSnap] = useState([]);
+  const [dashFilterType, setDashFilterType] = useState("all");
+  const [dashFilterFrom, setDashFilterFrom] = useState(getLocalToday());
+  const [dashFilterTo, setDashFilterTo] = useState(getLocalToday());
+
+  const [targetFilterType, setTargetFilterType] = useState("all");
+  const [targetFilterFrom, setTargetFilterFrom] = useState(getLocalToday());
+  const [targetFilterTo, setTargetFilterTo] = useState(getLocalToday());
+
+  const [leaderFilterType, setLeaderFilterType] = useState("all");
+  const [leaderFilterFrom, setLeaderFilterFrom] = useState(getLocalToday());
+  const [leaderFilterTo, setLeaderFilterTo] = useState(getLocalToday());
+
+  const [targetPointsFilterType, setTargetPointsFilterType] = useState("all");
+  const [targetPointsFilterFrom, setTargetPointsFilterFrom] = useState(getLocalToday());
+  const [targetPointsFilterTo, setTargetPointsFilterTo] = useState(getLocalToday());
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user || user.email !== "admin@gmail.com") {
+    const fetchSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || session.user.email !== "admin@gmail.com") {
+        router.push("/admin/login");
+      } else {
+        fetchData();
+      }
+    };
+    fetchSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session || session.user.email !== "admin@gmail.com") {
         router.push("/admin/login");
       } else {
         fetchData();
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, [router]);
 
   const fetchData = async () => {
     try {
-      const empSnap = await getDocs(collection(db, "employees"));
-      const attendance = await getDocs(collection(db, "attendance"));
-      const calls = await getDocs(collection(db, "calls"));
-      const shops = await getDocs(collection(db, "shops"));
-      const reps = await getDocs(collection(db, "reports"));
-      const tasks = await getDocs(collection(db, "tasks"));
+      const [empRes, attRes, callsRes, shopsRes, repsRes, tasksRes] = await Promise.all([
+        supabase.from('employees').select('*'),
+        supabase.from('attendance').select('*'),
+        supabase.from('calls').select('*'),
+        supabase.from('shops').select('*'),
+        supabase.from('reports').select('*'),
+        supabase.from('tasks').select('*')
+      ]);
 
-      setAttSnap(attendance);
-      setCallsSnap(calls);
-      setShopsSnap(shops);
-      setRepsSnap(reps);
-      setTasksSnap(tasks);
+      const mapCalls = callsRes.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapShops = shopsRes.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapReps = repsRes.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapAtt = attRes.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapTasks = tasksRes.data?.map(d => ({ ...d, employeeEmail: d.employee_email, caseCount: d.case_count, completedCases: d.completed_cases, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const empData = empRes.data || [];
+
+      setEmployeesSnap(empData);
+      setAttSnap(mapAtt.map(d => ({ id: d.id, data: () => d })));
+      setCallsSnap(mapCalls.map(d => ({ id: d.id, data: () => d })));
+      setShopsSnap(mapShops.map(d => ({ id: d.id, data: () => d })));
+      setRepsSnap(mapReps.map(d => ({ id: d.id, data: () => d })));
+      setTasksSnap(mapTasks.map(d => ({ id: d.id, data: () => d })));
 
       const metricsMap = {};
 
-      empSnap.forEach((doc) => {
-        const data = doc.data();
+      empData.forEach((data) => {
         if (data.role === "admin" || data.email === "admin@gmail.com") return;
 
         metricsMap[data.email] = {
-          id: doc.id,
+          id: data.id,
           name: data.name || data.email.split("@")[0],
           email: data.email,
           userid: data.userid || "—",
@@ -120,8 +163,7 @@ export default function AdminDashboard() {
         };
       });
 
-      attendance.forEach((doc) => {
-        const d = doc.data();
+      mapAtt.forEach((d) => {
         if (metricsMap[d.email]) {
           metricsMap[d.email].attCount++;
           metricsMap[d.email].attPts += (d.points || 0);
@@ -129,8 +171,7 @@ export default function AdminDashboard() {
       });
 
       const callsByEmailAndDate = {};
-      calls.forEach((doc) => {
-        const d = doc.data();
+      mapCalls.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy]) {
           metricsMap[d.loggedBy].callCount++;
           if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
@@ -155,8 +196,7 @@ export default function AdminDashboard() {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
 
-      shops.forEach((doc) => {
-        const d = doc.data();
+      mapShops.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy] && d.status === "verified") {
           const dt = d.timestamp ? new Date(d.timestamp.seconds * 1000) : new Date();
           if (dt.getMonth() === currentMonth && dt.getFullYear() === currentYear) {
@@ -168,8 +208,7 @@ export default function AdminDashboard() {
         metricsMap[email].shopPts = Math.floor(metricsMap[email].shopCount / 100) * 50;
       });
 
-      reps.forEach((doc) => {
-        const d = doc.data();
+      mapReps.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy]) {
           metricsMap[d.loggedBy].reportCount++;
           if (d.status === "approved") {
@@ -178,9 +217,19 @@ export default function AdminDashboard() {
         }
       });
 
+      mapTasks.forEach((d) => {
+        if (d.employeeEmail && metricsMap[d.employeeEmail] && d.caseCount > 0) {
+           const completionRatio = (d.completedCases || 0) / d.caseCount;
+           if (completionRatio >= 1.0) {
+              metricsMap[d.employeeEmail].targetBonusPts += 100;
+           } else if (completionRatio >= 0.9) {
+              metricsMap[d.employeeEmail].targetBonusPts += 75;
+           }
+        }
+      });
+
       const finalLeaderboard = Object.values(metricsMap).map((emp) => {
         emp.totalPoints =
-          emp.attPts +
           emp.callPts +
           emp.shopPts +
           emp.reportPts +
@@ -197,7 +246,7 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     router.push("/");
   };
 
@@ -205,44 +254,35 @@ export default function AdminDashboard() {
     e.preventDefault();
     try {
       if (editId) {
-        await updateDoc(doc(db, "employees", editId), {
+        const { error } = await supabase.from('employees').update({
           name: newEmp.name,
           email: newEmp.email,
           phone: newEmp.phone,
           status: newEmp.status,
           userid: newEmp.userid,
           password: newEmp.password,
-        });
+        }).eq('id', editId);
+        if (error) throw error;
         alert("Employee updated successfully!");
       } else {
-        // Create user via REST API to avoid signing out the admin
-        const apiKey = app.options.apiKey;
-        const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: newEmp.email,
-            password: newEmp.password,
-            returnSecureToken: true
-          })
+        const { data: authData, error: authError } = await supabaseAdminAuth.auth.signUp({
+          email: newEmp.email,
+          password: newEmp.password,
         });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error.message);
-        }
+        
+        if (authError) throw authError;
 
-        // Add to Firestore
-        await addDoc(collection(db, "employees"), {
-          uid: data.localId,
+        const { error } = await supabase.from('employees').insert([{
+          auth_user_id: authData?.user?.id,
           name: newEmp.name,
           email: newEmp.email,
           phone: newEmp.phone,
           status: newEmp.status,
           userid: newEmp.userid,
-          password: newEmp.password, // Storing as requested
+          password: newEmp.password,
           role: "employee",
-          timestamp: serverTimestamp(),
-        });
+        }]);
+        if (error) throw error;
         alert("Employee added successfully!");
       }
 
@@ -258,13 +298,13 @@ export default function AdminDashboard() {
   const handleAssignTask = async (e) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, "tasks"), {
-        employeeEmail: newTask.employeeEmail,
-        caseCount: Number(newTask.caseCount),
+      const { error } = await supabase.from('tasks').insert([{
+        employee_email: newTask.employeeEmail,
+        case_count: Number(newTask.caseCount),
         notes: newTask.notes,
         status: "assigned",
-        timestamp: serverTimestamp(),
-      });
+      }]);
+      if (error) throw error;
       alert("Task assigned successfully!");
       setShowAssignTask(false);
       setNewTask({ employeeEmail: "", caseCount: "", notes: "" });
@@ -277,7 +317,8 @@ export default function AdminDashboard() {
   const handleDeleteEmployee = async (id) => {
     if (window.confirm("Are you sure you want to delete this employee?")) {
       try {
-        await deleteDoc(doc(db, "employees", id));
+        const { error } = await supabase.from('employees').delete().eq('id', id);
+        if (error) throw error;
         fetchData();
         alert("Employee deleted successfully.");
       } catch (err) {
@@ -300,39 +341,183 @@ export default function AdminDashboard() {
   };
 
   const renderDashboard = () => {
+    const today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    const todayStr = today.toISOString().split("T")[0];
+
+    let fromDate = null;
+    let toDate = null;
+
+    if (dashFilterType === "today") { fromDate = todayStr; toDate = todayStr; }
+    else if (dashFilterType === "yesterday") {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const yStr = y.toISOString().split("T")[0];
+      fromDate = yStr; toDate = yStr;
+    } else if (dashFilterType === "week") {
+      const start = new Date(today);
+      start.setDate(start.getDate() - start.getDay());
+      fromDate = start.toISOString().split("T")[0];
+      toDate = todayStr;
+    } else if (dashFilterType === "month") {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      start.setMinutes(start.getMinutes() - start.getTimezoneOffset());
+      fromDate = start.toISOString().split("T")[0];
+      toDate = todayStr;
+    } else if (dashFilterType === "year") {
+      const start = new Date(today.getFullYear(), 0, 1);
+      start.setMinutes(start.getMinutes() - start.getTimezoneOffset());
+      fromDate = start.toISOString().split("T")[0];
+      toDate = todayStr;
+    } else if (dashFilterType === "custom") {
+      fromDate = dashFilterFrom;
+      toDate = dashFilterTo;
+    }
+
+    const isWithinRange = (timestamp) => {
+      if (dashFilterType === "all") return true;
+      if (!timestamp || !timestamp.seconds) return false;
+      const dt = new Date(timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      const dateStr = dt.toISOString().split("T")[0];
+      return dateStr >= fromDate && dateStr <= toDate;
+    };
+
+    const dMetricsMap = {};
+    employeesSnap.forEach((data) => {
+      if (data.role === "admin" || data.email === "admin@gmail.com") return;
+      dMetricsMap[data.email] = {
+        name: data.name || data.email.split("@")[0],
+        email: data.email,
+        init: data.name ? data.name.substring(0, 2).toUpperCase() : "EM",
+        callCount: 0,
+        callPts: 0,
+        shopCount: 0,
+        shopPts: 0,
+        reportCount: 0,
+        reportPts: 0,
+        targetBonusPts: 0,
+        totalPoints: 0,
+      };
+    });
+
     let totalCalls = 0;
+    let chartCalls = 0;
+    const callsByEmailAndDate = {};
     if (callsSnap) {
       callsSnap.forEach(doc => {
-        if (doc.data().loggedBy !== "admin@gmail.com") totalCalls++;
+        const d = doc.data();
+        if (d.loggedBy !== "admin@gmail.com" && isWithinRange(d.timestamp)) {
+          totalCalls++;
+          if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartCalls++;
+          
+          if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+             dMetricsMap[d.loggedBy].callCount++;
+             if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
+             const dt = new Date(d.timestamp.seconds * 1000);
+             dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+             const dStr = dt.toISOString().split("T")[0];
+             callsByEmailAndDate[d.loggedBy][dStr] = (callsByEmailAndDate[d.loggedBy][dStr] || 0) + 1;
+          }
+        }
       });
     }
+
+    Object.keys(dMetricsMap).forEach((email) => {
+      let pts = 0;
+      const dailyCounts = callsByEmailAndDate[email] || {};
+      for (const date in dailyCounts) {
+        if (dailyCounts[date] >= 20) pts += 5;
+        else if (dailyCounts[date] >= 16) pts += 3;
+      }
+      dMetricsMap[email].callPts = pts;
+    });
 
     let verifiedShops = 0;
     let totalShops = 0;
+    let chartShops = 0;
     if (shopsSnap) {
       shopsSnap.forEach(doc => {
-        totalShops++;
-        if (doc.data().status === 'verified') verifiedShops++;
+        const d = doc.data();
+        if (isWithinRange(d.timestamp)) {
+          totalShops++;
+          if (d.status === 'verified') {
+            verifiedShops++;
+            if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartShops++;
+            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+              dMetricsMap[d.loggedBy].shopCount++;
+            }
+          }
+        }
       });
     }
+    Object.keys(dMetricsMap).forEach((email) => {
+      dMetricsMap[email].shopPts = Math.floor(dMetricsMap[email].shopCount / 100) * 50;
+    });
 
     let approvedReports = 0;
     let totalReports = 0;
+    let chartReports = 0;
     if (repsSnap) {
       repsSnap.forEach(doc => {
-        totalReports++;
-        if (doc.data().status === 'approved') approvedReports++;
+        const d = doc.data();
+        if (isWithinRange(d.timestamp)) {
+          totalReports++;
+          if (d.status === 'approved') {
+            approvedReports++;
+            if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartReports++;
+            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+              dMetricsMap[d.loggedBy].reportCount++;
+              if (d.type === "weekly") dMetricsMap[d.loggedBy].reportPts += 15;
+            }
+          }
+        }
       });
     }
 
-    const totalPoints = metricsMatrix.reduce((acc, emp) => acc + (emp.totalPoints || 0), 0);
-    const avgPoints = metricsMatrix.length > 0 ? Math.round(totalPoints / metricsMatrix.length) : 0;
+    if (tasksSnap) {
+      tasksSnap.forEach(doc => {
+        const d = doc.data();
+        if (isWithinRange(d.timestamp)) {
+          if (d.employeeEmail && dMetricsMap[d.employeeEmail] && d.caseCount > 0) {
+             const completionRatio = (d.completedCases || 0) / d.caseCount;
+             if (completionRatio >= 1.0) {
+                dMetricsMap[d.employeeEmail].targetBonusPts += 100;
+             } else if (completionRatio >= 0.9) {
+                dMetricsMap[d.employeeEmail].targetBonusPts += 75;
+             }
+          }
+        }
+      });
+    }
+
+    const dashLeaderboard = Object.values(dMetricsMap).map((emp) => {
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + emp.targetBonusPts;
+      return emp;
+    }).sort((a, b) => b.totalPoints - a.totalPoints);
+
+    const totalChartActivity = chartCalls + chartShops + chartReports;
+    let chartInsight = "No activity recorded.";
+    if (totalChartActivity > 0) {
+      if (chartCalls > chartShops && chartCalls > chartReports) {
+        chartInsight = `Primary focus is on Productive Calls (${Math.round(chartCalls/totalChartActivity*100)}% of activity).`;
+      } else if (chartShops > chartCalls && chartShops > chartReports) {
+        chartInsight = `Strong emphasis on new Shop Registrations (${Math.round(chartShops/totalChartActivity*100)}% of activity).`;
+      } else if (chartReports > chartCalls && chartReports > chartShops) {
+        chartInsight = `High volume of Reporting activity (${Math.round(chartReports/totalChartActivity*100)}% of activity).`;
+      } else {
+        chartInsight = `Activity is balanced across multiple areas.`;
+      }
+    }
+
+    const totalPoints = dashLeaderboard.reduce((acc, emp) => acc + (emp.totalPoints || 0), 0);
+    const avgPoints = dashLeaderboard.length > 0 ? Math.round(totalPoints / dashLeaderboard.length) : 0;
 
     let recentActivities = [];
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.loggedBy !== "admin@gmail.com" && d.timestamp) {
+        if (d.loggedBy !== "admin@gmail.com" && d.timestamp && isWithinRange(d.timestamp)) {
           recentActivities.push({ type: 'call', text: `New call to ${d.phoneNumber}`, subtext: `By ${d.loggedBy}`, time: d.timestamp.seconds, icon: <IconPhoneCall size={20}/>, colorClass: styles.dark });
         }
       });
@@ -340,7 +525,7 @@ export default function AdminDashboard() {
     if (shopsSnap) {
       shopsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.timestamp) {
+        if (d.timestamp && isWithinRange(d.timestamp)) {
           recentActivities.push({ type: 'shop', text: `Shop ${d.status === 'verified' ? 'Verified' : 'Registered'}`, subtext: d.shopName, time: d.timestamp.seconds, icon: <IconBuildingStore size={20}/>, colorClass: d.status === 'verified' ? styles.green : styles.yellow });
         }
       });
@@ -348,7 +533,7 @@ export default function AdminDashboard() {
     if (repsSnap) {
       repsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.timestamp) {
+        if (d.timestamp && isWithinRange(d.timestamp)) {
           recentActivities.push({ type: 'report', text: `Report ${d.status === 'approved' ? 'Approved' : 'Submitted'}`, subtext: d.title, time: d.timestamp.seconds, icon: <IconFileReport size={20}/>, colorClass: d.status === 'approved' ? styles.green : styles.brown });
         }
       });
@@ -369,13 +554,29 @@ export default function AdminDashboard() {
       {/* Top Bar Area */}
       <div className={styles.topBar}>
         <div>
-          <h2 className={styles.greeting}>Good morning, Admin! 👋</h2>
+          <h2 className={styles.greeting}>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, Admin! 👋</h2>
           <p className={styles.subtitle}>Here's the live breakdown of your field team's metrics today.</p>
         </div>
-        <div className={styles.actions}>
-          <div className={styles.datePicker}>
-            <IconClockCheck size={16} /> {new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}
-          </div>
+        <div className={styles.actions} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <select 
+            value={dashFilterType} 
+            onChange={(e) => setDashFilterType(e.target.value)} 
+            style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", fontWeight: 600, color: "var(--tx)", outline: "none", cursor: "pointer", height: "38px" }}
+          >
+            <option value="all">Overall (All Time)</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="year">This Year</option>
+            <option value="custom">Custom Date Range</option>
+          </select>
+          {dashFilterType === "custom" && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input type="date" value={dashFilterFrom} onChange={(e) => setDashFilterFrom(e.target.value)} style={{ padding: "8px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", height: "38px", outline: "none", color: "var(--tx)" }} />
+              <input type="date" value={dashFilterTo} onChange={(e) => setDashFilterTo(e.target.value)} style={{ padding: "8px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", height: "38px", outline: "none", color: "var(--tx)" }} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -385,7 +586,7 @@ export default function AdminDashboard() {
           <div className={`${styles.iconCircle} ${styles.orange}`}><IconUsers size={28} /></div>
           <div>
             <div className={styles.statTitle}>Total Employees</div>
-            <div className={styles.statValue}>{metricsMatrix.length}</div>
+            <div className={styles.statValue}>{dashLeaderboard.length}</div>
             <div className={styles.statTrend}>↑ Active Team</div>
           </div>
         </div>
@@ -423,10 +624,10 @@ export default function AdminDashboard() {
           </div>
           <table className={styles.table}>
             <thead>
-              <tr><th>Rank</th><th>Employee</th><th>Total Points</th><th>Calls</th><th>Verified Shops</th></tr>
+              <tr><th>Rank</th><th>Employee</th><th>Total Points</th><th>Productive Calls</th><th>Verified Shops</th></tr>
             </thead>
             <tbody>
-              {metricsMatrix.slice(0, 4).map((emp, i) => (
+              {dashLeaderboard.slice(0, 4).map((emp, i) => (
                 <tr key={i}>
                   <td>
                     <div className={`${styles.rankBadge} ${i === 0 ? styles.gold : i === 1 ? styles.silver : i === 2 ? styles.bronze : ""}`}>
@@ -452,19 +653,35 @@ export default function AdminDashboard() {
         </div>
         
         <div className={styles.chartCard}>
-          <div className={styles.chartHeader}>
-            <div className={styles.chartTitle}>Platform Activity Breakdown</div>
+          <div className={styles.chartHeader} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className={styles.chartTitle}>Activity Breakdown</div>
+            <select 
+              value={chartEmpFilter} 
+              onChange={(e) => setChartEmpFilter(e.target.value)}
+              style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", fontSize: "12px", maxWidth: "120px", cursor: "pointer" }}
+            >
+              <option value="all">Whole Platform</option>
+              {dashLeaderboard.map((emp, i) => (
+                <option key={i} value={emp.email}>{emp.name}</option>
+              ))}
+            </select>
           </div>
           <div className={styles.donutChart}>
             <div className={styles.donutHole}>
-              <span style={{ fontSize: "11px", color: "#8d6e63" }}>Total Logs</span>
-              <span style={{ fontSize: "24px", fontWeight: "bold", color: "#3e2723" }}>{totalCalls + totalShops + totalReports}</span>
+              <span style={{ fontSize: "11px", color: "#8d6e63" }}>{chartEmpFilter === 'all' ? 'Total Logs' : 'Emp Logs'}</span>
+              <span style={{ fontSize: "24px", fontWeight: "bold", color: "#3e2723" }}>{totalChartActivity}</span>
             </div>
           </div>
           <div className={styles.donutLegend}>
-            <div className={styles.legendItem}><div className={styles.legendDot} style={{ background: "#5d4037" }}></div><div><b>Customer Calls</b><br/>{totalCalls}</div></div>
-            <div className={styles.legendItem}><div className={styles.legendDot} style={{ background: "#a1887f" }}></div><div><b>Shop Registrations</b><br/>{totalShops}</div></div>
-            <div className={styles.legendItem}><div className={styles.legendDot} style={{ background: "#e2d2c1" }}></div><div><b>Reports Filed</b><br/>{totalReports}</div></div>
+            <div className={styles.legendItem}><div className={styles.legendDot} style={{ background: "#5d4037" }}></div><div><b>Productive Calls</b><br/>{chartCalls}</div></div>
+            <div className={styles.legendItem}><div className={styles.legendDot} style={{ background: "#a1887f" }}></div><div><b>Shop Registrations</b><br/>{chartShops}</div></div>
+            <div className={styles.legendItem}><div className={styles.legendDot} style={{ background: "#e2d2c1" }}></div><div><b>Reports Filed</b><br/>{chartReports}</div></div>
+          </div>
+          <div style={{ marginTop: "16px", padding: "12px", background: "rgba(93, 64, 55, 0.05)", borderRadius: "8px", border: "1px solid rgba(93, 64, 55, 0.1)", fontSize: "12px", color: "#5d4037", display: "flex", alignItems: "flex-start", gap: "8px" }}>
+            <IconTarget size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
+            <div>
+              <strong>Insight:</strong> {chartInsight}
+            </div>
           </div>
         </div>
 
@@ -498,11 +715,11 @@ export default function AdminDashboard() {
               <div className={styles.quickStat}>
                 <div className={styles.quickIcon}><IconClockCheck size={24}/></div>
                 <div style={{ fontSize: "10px", color: "#8d6e63" }}>Active Employees</div>
-                <div style={{ fontSize: "14px", fontWeight: "bold", color: "#2b1c11" }}>{metricsMatrix.length}</div>
+                <div style={{ fontSize: "14px", fontWeight: "bold", color: "#2b1c11" }}>{dashLeaderboard.length}</div>
               </div>
               <div className={styles.quickStat}>
                 <div className={styles.quickIcon}><IconPhoneCall size={24}/></div>
-                <div style={{ fontSize: "10px", color: "#8d6e63" }}>Total Calls</div>
+                <div style={{ fontSize: "10px", color: "#8d6e63" }}>Productive Calls</div>
                 <div style={{ fontSize: "14px", fontWeight: "bold", color: "#2b1c11" }}>{totalCalls}</div>
               </div>
               <div className={styles.quickStat}>
@@ -548,13 +765,14 @@ export default function AdminDashboard() {
         
         <div className="tw">
           <table>
-            <thead><tr><th>Name</th><th>User ID</th><th>Email Address</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr><th>Name</th><th>User ID</th><th>Email Address</th><th>Password</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
               {filteredEmployees.length > 0 ? filteredEmployees.map((emp) => (
                 <tr key={emp.email}>
                   <td><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><div className="lav" style={{ width: "28px", height: "28px", fontSize: "11px" }}>{emp.init}</div><b>{emp.name}</b></div></td>
                   <td style={{ fontFamily: "var(--font-dm-mono)", color: "var(--tx2)" }}>{emp.userid}</td>
                   <td style={{ fontFamily: "var(--font-dm-mono)" }}>{emp.email}</td>
+                  <td style={{ fontFamily: "var(--font-dm-mono)" }}>{emp.password || "—"}</td>
                   <td><span className={`bdg ${emp.status === "active" ? "b-ok" : "b-am"}`}>{emp.status}</span></td>
                   <td>
                     <div style={{ display: "flex", gap: "8px" }}>
@@ -567,7 +785,7 @@ export default function AdminDashboard() {
                     </div>
                   </td>
                 </tr>
-              )) : <tr><td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>No employee records match your search.</td></tr>}
+              )) : <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>No employee records match your search.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -718,11 +936,9 @@ export default function AdminDashboard() {
       const eName = c.empName;
       if (!callsByEmp[eName]) callsByEmp[eName] = [];
       callsByEmp[eName].push(c);
-      totalDur += (c.durationMinutes || 0);
     });
 
     const uniqueEmps = Object.keys(callsByEmp).length;
-    const avgDur = filteredCallList.length > 0 ? Math.round(totalDur / filteredCallList.length) : 0;
 
     const toggleEmp = (eName) => {
       setExpandedEmp(prev => ({ ...prev, [eName]: !prev[eName] }));
@@ -731,13 +947,12 @@ export default function AdminDashboard() {
     return (
       <>
         <div className="kg">
-          <div className="kc gd"><div className="ki"><IconPhoneCall /></div><div className="kl">Total Tracked Calls</div><div className="kv">{filteredCallList.length}</div><div className="ks">In selected range</div></div>
-          <div className="kc ok"><div className="ki"><IconUsers /></div><div className="kl">Unique Callers</div><div className="kv" style={{ fontSize: "28px" }}>{uniqueEmps}</div><div className="ks">Employees who made calls</div></div>
-          <div className="kc"><div className="ki"><IconClock /></div><div className="kl">Avg Duration</div><div className="kv">{avgDur}m</div><div className="ks">Per call</div></div>
+          <div className="kc gd"><div className="ki"><IconPhoneCall /></div><div className="kl">Total Productive Calls</div><div className="kv">{filteredCallList.length}</div><div className="ks">In selected range</div></div>
+          <div className="kc ok"><div className="ki"><IconUsers /></div><div className="kl">Unique Agents</div><div className="kv" style={{ fontSize: "28px" }}>{uniqueEmps}</div><div className="ks">Employees who logged beats</div></div>
         </div>
         <div className="card">
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px" }}>
-            <span>Cross-Department Real-Time Call Metrics Pipeline</span>
+            <span>Cross-Department Real-Time Productive Calls Pipeline</span>
             <div className="filter-row">
               <input type="text" placeholder="Search Name or Email" value={callFilterSearch} onChange={(e) => setCallFilterSearch(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
               <input type="date" value={callFilterFrom} onChange={(e) => setCallFilterFrom(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
@@ -746,35 +961,54 @@ export default function AdminDashboard() {
           </div>
           <div className="tw">
             <table>
-              <thead><tr><th>Date</th><th>Employee Email</th><th>Target Identity Contact</th><th>Interaction State</th><th>Duration Context</th></tr></thead>
+              <thead><tr><th>Date</th><th>Employee Email</th><th>Beat (Area)</th><th>Shop Name</th><th>Shop Location</th><th>Total Sales</th></tr></thead>
               <tbody>
                 {Object.keys(callsByEmp).length > 0 ? (
                   Object.keys(callsByEmp).map((eName, i) => (
                     <React.Fragment key={i}>
                       <tr onClick={() => toggleEmp(eName)} style={{ cursor: "pointer", background: "var(--sur2)" }}>
                         <td><b>{eName}</b></td>
-                        <td colSpan="3"><b>{callsByEmp[eName].length} Calls Logged</b></td>
+                        <td colSpan="4"><b>{callsByEmp[eName].length} Productive Calls Logged</b></td>
                         <td style={{ textAlign: "right" }}>{expandedEmp[eName] ? "▼" : "▲"}</td>
                       </tr>
-                      {expandedEmp[eName] && callsByEmp[eName].map((d, j) => {
-                        let dStr = "—";
-                        if (d.timestamp && d.timestamp.seconds) {
-                          dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
-                        }
-                        return (
-                          <tr key={j + "-sub"} style={{ background: "transparent" }}>
-                            <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
-                            <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.loggedBy}</td>
-                            <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.phoneNumber}</td>
-                            <td><span className="bdg b-ok">{d.status}</span></td>
-                            <td>{d.durationMinutes} minutes</td>
-                          </tr>
-                        );
-                      })}
+                      {expandedEmp[eName] && (() => {
+                        const groupedByBeat = {};
+                        callsByEmp[eName].forEach(c => {
+                          const beat = c.customerName || "Unknown Beat";
+                          if (!groupedByBeat[beat]) groupedByBeat[beat] = [];
+                          groupedByBeat[beat].push(c);
+                        });
+
+                        return Object.keys(groupedByBeat).map((beat, bIdx) => (
+                          <React.Fragment key={`${eName}-beat-${bIdx}`}>
+                            <tr style={{ background: "var(--sur)" }}>
+                              <td style={{ paddingLeft: "30px", fontSize: "13px", color: "var(--tx2)" }}>—</td>
+                              <td colSpan="4" style={{ color: "var(--ind)", fontWeight: 600 }}>📍 Beat: {beat}</td>
+                              <td style={{ fontWeight: 600, color: "var(--tx)" }}>{groupedByBeat[beat][0]?.notes || "—"}</td>
+                            </tr>
+                            {groupedByBeat[beat].map((d, j) => {
+                              let dStr = "—";
+                              if (d.timestamp && d.timestamp.seconds) {
+                                dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                              }
+                              return (
+                                <tr key={`${eName}-beat-${bIdx}-${j}`} style={{ background: "transparent" }}>
+                                  <td style={{ fontSize: "13px", color: "var(--tx2)", paddingLeft: "30px" }}>{dStr}</td>
+                                  <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.loggedBy}</td>
+                                  <td style={{ color: "var(--tx3)", fontSize: "12px", paddingLeft: "20px" }}>↳ Shop</td>
+                                  <td><span className="bdg b-ok">{d.status}</span></td>
+                                  <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.phoneNumber}</td>
+                                  <td style={{ color: "var(--tx3)" }}>—</td>
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>
+                        ));
+                      })()}
                     </React.Fragment>
                   ))
                 ) : (
-                  <tr><td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>No logged calls available.</td></tr>
+                  <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>No productive calls available.</td></tr>
                 )}
               </tbody>
             </table>
@@ -786,13 +1020,13 @@ export default function AdminDashboard() {
 
   const handleRejectShop = async (id) => {
     try {
-      await updateDoc(doc(db, "shops", id), { status: "rejected" });
+      await supabase.from('shops').update({ status: "rejected" }).eq('id', id);
       fetchData();
     } catch (e) { console.error(e); }
   };
   const handleVerifyShop = async (id) => {
     try {
-      await updateDoc(doc(db, "shops", id), { status: "verified" });
+      await supabase.from('shops').update({ status: "verified" }).eq('id', id);
       fetchData();
     } catch (e) {
       console.error(e);
@@ -856,7 +1090,15 @@ export default function AdminDashboard() {
       <>
         <div className="kg">
           <div className="kc gd"><div className="ki"><IconBuildingStore /></div><div className="kl">Total Shops</div><div className="kv">{filteredShopList.length}</div><div className="ks">In selected range</div></div>
-          <div className="kc ok"><div className="ki"><IconShield /></div><div className="kl">Verified Shops</div><div className="kv" style={{ fontSize: "28px" }}>{verifiedCount}</div><div className="ks">Added to monthly goals</div></div>
+          <div className="kc ok" style={{ position: "relative", overflow: "hidden" }}>
+            <div className="ki"><IconShield /></div>
+            <div className="kl">Verified Shops</div>
+            <div className="kv" style={{ fontSize: "28px" }}>{verifiedCount}</div>
+            <div className="ks">Monthly Progress (Target: 100)</div>
+            <div style={{ marginTop: "12px", background: "var(--bdr)", height: "6px", borderRadius: "4px", overflow: "hidden", position: "relative" }}>
+              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.min(100, (verifiedCount / 100) * 100)}%`, background: "var(--ok)", transition: "width 0.5s ease" }}></div>
+            </div>
+          </div>
           <div className="kc b-am"><div className="ki"><IconClockCheck /></div><div className="kl">Pending Verification</div><div className="kv">{pendingCount}</div><div className="ks">Awaiting your approval</div></div>
         </div>
         
@@ -878,7 +1120,16 @@ export default function AdminDashboard() {
                     <React.Fragment key={i}>
                       <tr onClick={() => toggleShopEmp(eName)} style={{ cursor: "pointer", background: "var(--sur2)" }}>
                         <td><b>{eName}</b></td>
-                        <td colSpan="4"><b>{shopsByEmp[eName].length} Shops Logged</b></td>
+                        <td colSpan="4">
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <b>{shopsByEmp[eName].length} Shops Logged</b>
+                            {shopsByEmp[eName].filter(s => s.status !== 'verified').length > 0 && (
+                              <span style={{ background: "#d32f2f", color: "#fff", padding: "4px 10px", borderRadius: "12px", fontSize: "13px", fontWeight: "bold" }}>
+                                {shopsByEmp[eName].filter(s => s.status !== 'verified').length} Pending Review
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ textAlign: "right" }}>{expandedShopEmp[eName] ? "▼" : "▲"}</td>
                       </tr>
                       {expandedShopEmp[eName] && shopsByEmp[eName].map((d, j) => {
@@ -927,15 +1178,27 @@ export default function AdminDashboard() {
 
   const handleApproveReport = async (id) => {
     try {
-      await updateDoc(doc(db, "reports", id), { status: "approved" });
+      const { error } = await supabase.from('reports').update({ status: "approved" }).eq('id', id);
+      if (error) {
+        alert("Error approving: " + error.message);
+        console.error(error);
+        return;
+      }
+      alert("Report Approved!");
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { alert("Error: " + e.message); console.error(e); }
   };
   const handleRejectReport = async (id) => {
     try {
-      await updateDoc(doc(db, "reports", id), { status: "rejected" });
+      const { error } = await supabase.from('reports').update({ status: "rejected" }).eq('id', id);
+      if (error) {
+        alert("Error rejecting: " + error.message);
+        console.error(error);
+        return;
+      }
+      alert("Report Rejected!");
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { alert("Error: " + e.message); console.error(e); }
   };
 
   const renderReports = () => {
@@ -1018,7 +1281,15 @@ export default function AdminDashboard() {
                   onClick={() => toggleRepEmp(eName)}
                 >
                   <span><b>{eName}</b></span>
-                  <span style={{ fontSize: "14px", color: "var(--tx2)" }}>{repsByEmp[eName].length} Reports Logged {expandedRepEmp[eName] ? "▼" : "▲"}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "14px", color: "var(--tx2)" }}>{repsByEmp[eName].length} Reports Logged</span>
+                    {repsByEmp[eName].filter(r => r.status !== 'approved' && r.status !== 'rejected').length > 0 && (
+                      <span style={{ background: "#d32f2f", color: "#fff", padding: "4px 10px", borderRadius: "12px", fontSize: "13px", fontWeight: "bold" }}>
+                        {repsByEmp[eName].filter(r => r.status !== 'approved' && r.status !== 'rejected').length} Pending Audit
+                      </span>
+                    )}
+                    <span style={{ fontSize: "14px", color: "var(--tx2)", marginLeft: "4px" }}>{expandedRepEmp[eName] ? "▼" : "▲"}</span>
+                  </div>
                 </div>
                 {expandedRepEmp[eName] && (
                   <div style={{ padding: "16px", borderTop: "1px solid var(--bdr)", display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -1059,33 +1330,189 @@ export default function AdminDashboard() {
     );
   };
 
-  const renderTargets = () => (
-    <>
-      <div className="card" style={{ textAlign: "left", marginBottom: "20px" }}>
+  const computeLeaderboard = (filterType, filterFrom, filterTo) => {
+    const isWithinRange = (timestamp) => {
+      if (filterType === "all") return true;
+      if (!timestamp || !timestamp.seconds) return false;
+      const today = new Date();
+      today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+      const todayStr = today.toISOString().split("T")[0];
+      let from = null, to = null;
+      if (filterType === "today") { from = todayStr; to = todayStr; }
+      else if (filterType === "yesterday") {
+        const y = new Date(today); y.setDate(y.getDate() - 1);
+        from = y.toISOString().split("T")[0]; to = from;
+      } else if (filterType === "week") {
+        const s = new Date(today); s.setDate(s.getDate() - s.getDay());
+        from = s.toISOString().split("T")[0]; to = todayStr;
+      } else if (filterType === "month") {
+        const s = new Date(today.getFullYear(), today.getMonth(), 1);
+        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
+        from = s.toISOString().split("T")[0]; to = todayStr;
+      } else if (filterType === "year") {
+        const s = new Date(today.getFullYear(), 0, 1);
+        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
+        from = s.toISOString().split("T")[0]; to = todayStr;
+      } else if (filterType === "custom") {
+        from = filterFrom; to = filterTo;
+      }
+      const dt = new Date(timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      const dateStr = dt.toISOString().split("T")[0];
+      return dateStr >= from && dateStr <= to;
+    };
+
+    const dMetricsMap = {};
+    employeesSnap.forEach((data) => {
+      if (data.role === "admin" || data.email === "admin@gmail.com") return;
+      dMetricsMap[data.email] = {
+        name: data.name || data.email.split("@")[0],
+        email: data.email,
+        init: data.name ? data.name.substring(0, 2).toUpperCase() : "EM",
+        callCount: 0,
+        callPts: 0,
+        shopCount: 0,
+        shopPts: 0,
+        reportCount: 0,
+        reportPts: 0,
+        targetBonusPts: 0,
+        totalPoints: 0,
+      };
+    });
+
+    const callsByEmailAndDate = {};
+    if (callsSnap) {
+      callsSnap.forEach(doc => {
+        const d = doc.data();
+        if (d.loggedBy !== "admin@gmail.com" && isWithinRange(d.timestamp)) {
+          if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+             dMetricsMap[d.loggedBy].callCount++;
+             if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
+             const dt = new Date(d.timestamp.seconds * 1000);
+             dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+             const dStr = dt.toISOString().split("T")[0];
+             callsByEmailAndDate[d.loggedBy][dStr] = (callsByEmailAndDate[d.loggedBy][dStr] || 0) + 1;
+          }
+        }
+      });
+    }
+
+    Object.keys(dMetricsMap).forEach((email) => {
+      let pts = 0;
+      const dailyCounts = callsByEmailAndDate[email] || {};
+      for (const date in dailyCounts) {
+        if (dailyCounts[date] >= 20) pts += 5;
+        else if (dailyCounts[date] >= 16) pts += 3;
+      }
+      dMetricsMap[email].callPts = pts;
+    });
+
+    if (shopsSnap) {
+      shopsSnap.forEach(doc => {
+        const d = doc.data();
+        if (isWithinRange(d.timestamp)) {
+          if (d.status === 'verified') {
+            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+              dMetricsMap[d.loggedBy].shopCount++;
+            }
+          }
+        }
+      });
+    }
+    Object.keys(dMetricsMap).forEach((email) => {
+      dMetricsMap[email].shopPts = Math.floor(dMetricsMap[email].shopCount / 100) * 50;
+    });
+
+    if (repsSnap) {
+      repsSnap.forEach(doc => {
+        const d = doc.data();
+        if (isWithinRange(d.timestamp)) {
+          if (d.status === 'approved') {
+            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+              dMetricsMap[d.loggedBy].reportCount++;
+              if (d.type === "weekly") dMetricsMap[d.loggedBy].reportPts += 15;
+            }
+          }
+        }
+      });
+    }
+
+    if (tasksSnap) {
+      tasksSnap.forEach(doc => {
+        const d = doc.data();
+        if (isWithinRange(d.timestamp)) {
+          if (d.employeeEmail && dMetricsMap[d.employeeEmail] && d.caseCount > 0) {
+             const completionRatio = (d.completedCases || 0) / d.caseCount;
+             if (completionRatio >= 1.0) {
+                dMetricsMap[d.employeeEmail].targetBonusPts += 100;
+             } else if (completionRatio >= 0.9) {
+                dMetricsMap[d.employeeEmail].targetBonusPts += 75;
+             }
+          }
+        }
+      });
+    }
+
+    return Object.values(dMetricsMap).map((emp) => {
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + emp.targetBonusPts;
+      return emp;
+    }).sort((a, b) => b.totalPoints - a.totalPoints);
+  };
+
+  const renderTargets = () => {
+    const targetsLeaderboard = computeLeaderboard(targetPointsFilterType, targetPointsFilterFrom, targetPointsFilterTo);
+
+    return (
+      <>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <select 
+              value={targetPointsFilterType} 
+              onChange={(e) => setTargetPointsFilterType(e.target.value)} 
+              style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", fontWeight: 600, color: "var(--tx)", outline: "none", cursor: "pointer", height: "34px", fontSize: "13px" }}
+            >
+              <option value="all">Overall (All Time)</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {targetPointsFilterType === "custom" && (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="date" value={targetPointsFilterFrom} onChange={(e) => setTargetPointsFilterFrom(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
+                <input type="date" value={targetPointsFilterTo} onChange={(e) => setTargetPointsFilterTo(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card" style={{ textAlign: "left", marginBottom: "20px" }}>
         <div className="ctit">System Gamified Points Scoring Rules Parameters</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
-          <div className="kc" style={{ background: "var(--sur2)" }}><div className="ki"><IconClockCheck /></div><div className="kl">Valid check-in/out</div><div className="kv" style={{ fontSize: "16px" }}>Attendance</div><span className="bdg b-ok">0 pts/day</span></div>
-          <div className="kc gd" style={{ background: "var(--sur2)" }}><div className="ki"><IconPhoneCall /></div><div className="kl">16 calls (3 pts) | 20 calls (5 pts)</div><div className="kv" style={{ fontSize: "16px" }}>Calls</div><span className="bdg b-ok">Up to 5 pts/day</span></div>
+          <div className="kc gd" style={{ background: "var(--sur2)" }}><div className="ki"><IconPhoneCall /></div><div className="kl">16 shops (3 pts) | 20 shops (5 pts)</div><div className="kv" style={{ fontSize: "16px" }}>Productive Calls</div><span className="bdg b-ok">Up to 5 pts/day</span></div>
           <div className="kc ok" style={{ background: "var(--sur2)" }}><div className="ki"><IconBuildingStore /></div><div className="kl">100 verified shops/mo</div><div className="kv" style={{ fontSize: "16px" }}>Shops</div><span className="bdg b-ok">50 pts bonus</span></div>
           <div className="kc" style={{ background: "var(--sur2)", borderLeft: "4px solid var(--pur)" }}><div className="ki"><IconFileReport /></div><div className="kl">Approved Weekly Reports</div><div className="kv" style={{ fontSize: "16px" }}>Reports</div><span className="bdg b-ok">15 pts/report</span></div>
+          <div className="kc" style={{ background: "var(--sur2)", borderLeft: "4px solid var(--ind)" }}><div className="ki"><IconListCheck /></div><div className="kl">90% (75pts) | 100% (100pts)</div><div className="kv" style={{ fontSize: "16px" }}>Targets</div><span className="bdg b-ok">Up to 100 pts</span></div>
         </div>
       </div>
       <div className="card">
         <div className="ctit">Calculated Cumulative Employee Ledger Scores Matrix</div>
         <div className="tw">
           <table>
-            <thead><tr><th>Rank Index</th><th>Field Operator Personnel</th><th>Attendance</th><th>Calls</th><th>Shop Placement</th><th>Reports</th><th>Total Points</th></tr></thead>
+            <thead><tr><th>Rank Index</th><th>Field Operator Personnel</th><th>Productive Calls</th><th>Shop Placement</th><th>Reports</th><th>Targets</th><th>Total Points</th></tr></thead>
             <tbody>
-              {metricsMatrix.length > 0 ? metricsMatrix.map((emp, index) => {
+              {targetsLeaderboard.length > 0 ? targetsLeaderboard.map((emp, index) => {
                 const rankMark = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`;
                 return (
                   <tr key={emp.email}>
                     <td><b>{rankMark}</b></td>
                     <td><b>{emp.name}</b></td>
-                    <td>{emp.attPts || 0} pts</td>
                     <td>{emp.callPts || 0} pts</td>
                     <td>{emp.shopPts || 0} pts</td>
                     <td>{emp.reportPts || 0} pts</td>
+                    <td>{emp.targetBonusPts || 0} pts</td>
                     <td><b style={{ color: "var(--ind)", fontSize: "15px" }}>{emp.totalPoints || 0} pts</b></td>
                   </tr>
                 );
@@ -1095,39 +1522,105 @@ export default function AdminDashboard() {
         </div>
       </div>
     </>
-  );
+    );
+  };
 
   const renderTargetAssignment = () => {
+    const isTargetWithinRange = (timestamp) => {
+      if (targetFilterType === "all") return true;
+      if (!timestamp || !timestamp.seconds) return false;
+      const today = new Date();
+      today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+      const todayStr = today.toISOString().split("T")[0];
+      let from = null, to = null;
+      if (targetFilterType === "today") { from = todayStr; to = todayStr; }
+      else if (targetFilterType === "yesterday") {
+        const y = new Date(today); y.setDate(y.getDate() - 1);
+        from = y.toISOString().split("T")[0]; to = from;
+      } else if (targetFilterType === "week") {
+        const s = new Date(today); s.setDate(s.getDate() - s.getDay());
+        from = s.toISOString().split("T")[0]; to = todayStr;
+      } else if (targetFilterType === "month") {
+        const s = new Date(today.getFullYear(), today.getMonth(), 1);
+        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
+        from = s.toISOString().split("T")[0]; to = todayStr;
+      } else if (targetFilterType === "year") {
+        const s = new Date(today.getFullYear(), 0, 1);
+        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
+        from = s.toISOString().split("T")[0]; to = todayStr;
+      } else if (targetFilterType === "custom") {
+        from = targetFilterFrom; to = targetFilterTo;
+      }
+      const dt = new Date(timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      const dateStr = dt.toISOString().split("T")[0];
+      return dateStr >= from && dateStr <= to;
+    };
+
     let taskList = [];
     if (tasksSnap) {
       tasksSnap.forEach(doc => {
          const d = doc.data();
-         d.id = doc.id;
-         d.empName = metricsMatrix.find(e => e.email === d.employeeEmail)?.name || (d.employeeEmail ? d.employeeEmail.split('@')[0] : d.employeeEmail);
-         taskList.push(d);
+         if (isTargetWithinRange(d.timestamp)) {
+           d.id = doc.id;
+           d.empName = metricsMatrix.find(e => e.email === d.employeeEmail)?.name || (d.employeeEmail ? d.employeeEmail.split('@')[0] : d.employeeEmail);
+           taskList.push(d);
+         }
       });
     }
     taskList.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
     return (
       <div className="card">
-        <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          Assigned Tasks
-          <button className="btn btn-ok" onClick={() => setShowAssignTask(true)}>+ Add Assign Task</button>
+        <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+          <span>Assigned Tasks</span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: "wrap" }}>
+            <select 
+              value={targetFilterType} 
+              onChange={(e) => setTargetFilterType(e.target.value)} 
+              style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", fontWeight: 600, color: "var(--tx)", outline: "none", cursor: "pointer", height: "34px", fontSize: "13px" }}
+            >
+              <option value="all">Overall (All Time)</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {targetFilterType === "custom" && (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="date" value={targetFilterFrom} onChange={(e) => setTargetFilterFrom(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
+                <input type="date" value={targetFilterTo} onChange={(e) => setTargetFilterTo(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
+              </div>
+            )}
+            <button className="btn btn-ok" onClick={() => setShowAssignTask(true)}>+ Add Assign Task</button>
+          </div>
         </div>
         <div className="tw">
           <table>
-            <thead><tr><th>Date</th><th>Employee</th><th>Total Cases</th><th>Notes</th><th>Status</th></tr></thead>
+            <thead><tr><th>Date</th><th>Employee</th><th>Total Cases</th><th>Progress</th><th>Notes</th><th>Status</th></tr></thead>
             <tbody>
-              {taskList.length > 0 ? taskList.map(t => (
+              {taskList.length > 0 ? taskList.map(t => {
+                const comp = t.completedCases || 0;
+                const ratio = t.caseCount > 0 ? Math.min(100, Math.round((comp / t.caseCount) * 100)) : 0;
+                return (
                 <tr key={t.id}>
                   <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{t.timestamp ? new Date(t.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }) : "—"}</td>
                   <td><b>{t.empName}</b></td>
                   <td>{t.caseCount}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "100px" }}>
+                      <div style={{ flex: 1, height: "6px", background: "var(--bdr)", borderRadius: "3px", overflow: "hidden" }}>
+                        <div style={{ width: `${ratio}%`, height: "100%", background: ratio >= 100 ? "var(--ok)" : "var(--ind)" }}></div>
+                      </div>
+                      <b style={{ fontSize: "12px", color: ratio >= 100 ? "var(--ok)" : "var(--tx)" }}>{comp}</b>
+                    </div>
+                  </td>
                   <td>{t.notes}</td>
-                  <td><span className="bdg b-am">{t.status}</span></td>
+                  <td><span className={`bdg ${t.status === 'completed' ? 'b-ok' : 'b-am'}`}>{t.status}</span></td>
                 </tr>
-              )) : <tr><td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>No tasks assigned.</td></tr>}
+              )}) : <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>No tasks assigned.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1136,10 +1629,36 @@ export default function AdminDashboard() {
   };
 
   const renderLeaderboard = () => {
+    const leaderLeaderboard = computeLeaderboard(leaderFilterType, leaderFilterFrom, leaderFilterTo);
+
     return (
       <>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <select 
+              value={leaderFilterType} 
+              onChange={(e) => setLeaderFilterType(e.target.value)} 
+              style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", fontWeight: 600, color: "var(--tx)", outline: "none", cursor: "pointer", height: "34px", fontSize: "13px" }}
+            >
+              <option value="all">Overall (All Time)</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {leaderFilterType === "custom" && (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="date" value={leaderFilterFrom} onChange={(e) => setLeaderFilterFrom(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
+                <input type="date" value={leaderFilterTo} onChange={(e) => setLeaderFilterTo(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
+              </div>
+            )}
+          </div>
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginBottom: "20px" }}>
-          {metricsMatrix.slice(0, 3).map((emp, index) => {
+          {leaderLeaderboard.slice(0, 3).map((emp, index) => {
             const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : "🥉";
             const borderTheme = index === 0 ? "var(--gold)" : index === 1 ? "#94a3b8" : "#f97316";
             return (
@@ -1156,7 +1675,7 @@ export default function AdminDashboard() {
         <div className="card">
           <div className="ctit">Full System Departmental Ranking Directory</div>
           <div>
-            {metricsMatrix.length > 0 ? metricsMatrix.map((emp, index) => {
+            {leaderLeaderboard.length > 0 ? leaderLeaderboard.map((emp, index) => {
               const medalMark = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : '#' + (index + 1);
               const rankRowClass = index === 0 ? "r1" : index === 1 ? "r2" : index === 2 ? "r3" : "";
               const badgeIconLabel = index === 0 ? "a" : index === 1 ? "b" : index === 2 ? "c" : "n";
@@ -1166,7 +1685,7 @@ export default function AdminDashboard() {
                   <div className="lav">{emp.init}</div>
                   <div style={{ flex: 1, textAlign: "left" }}>
                     <div style={{ fontWeight: 700, fontSize: "14px" }}>{emp.name}</div>
-                    <div style={{ fontSize: "12px", color: "var(--tx3)" }}>Calls Logged: {emp.callCount} · Shops Tracked: {emp.shopCount} · Attendance Count: {emp.attCount}</div>
+                    <div style={{ fontSize: "12px", color: "var(--tx3)" }}>Calls Logged: {emp.callCount} · Shops Tracked: {emp.shopCount}</div>
                   </div>
                   <div>
                     <div className="lpt">{emp.totalPoints}</div>
@@ -1198,7 +1717,7 @@ export default function AdminDashboard() {
           <div className="blogo" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             <img src="/logo.jpeg" alt="PCA Logo" style={{ width: "42px", height: "42px", mixBlendMode: "multiply", clipPath: "inset(3%)", objectFit: "cover", margin: 0 }} />
             <div>
-              <div className="bname">PMA FieldOps</div>
+              <div className="bname">Prabha Food Industries</div>
               <div className="btag">Admin Panel</div>
             </div>
           </div>
@@ -1209,7 +1728,7 @@ export default function AdminDashboard() {
           <button className={`ni ${activeTab === 'employees' ? 'on' : ''}`} onClick={() => { setActiveTab('employees'); setIsMobileMenuOpen(false); }}><IconUsers size={18} />Employees</button>
           <div className="snl">Monitoring</div>
           <button className={`ni ${activeTab === 'attendance' ? 'on' : ''}`} onClick={() => { setActiveTab('attendance'); setIsMobileMenuOpen(false); }}><IconClockCheck size={18} />Attendance</button>
-          <button className={`ni ${activeTab === 'calls' ? 'on' : ''}`} onClick={() => { setActiveTab('calls'); setIsMobileMenuOpen(false); }}><IconPhoneCall size={18} />Call Monitor</button>
+          <button className={`ni ${activeTab === 'calls' ? 'on' : ''}`} onClick={() => { setActiveTab('calls'); setIsMobileMenuOpen(false); }}><IconPhoneCall size={18} />Productive Calls</button>
           <button className={`ni ${activeTab === 'shops' ? 'on' : ''}`} onClick={() => { setActiveTab('shops'); setIsMobileMenuOpen(false); }}><IconBuildingStore size={18} />Shop Verify</button>
           <button className={`ni ${activeTab === 'reports' ? 'on' : ''}`} onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }}><IconFileReport size={18} />Reports</button>
           <div className="snl">Performance</div>
@@ -1279,7 +1798,7 @@ export default function AdminDashboard() {
                 <div className="fg"><label>User ID *</label><input type="text" value={newEmp.userid} onChange={(e) => setNewEmp({...newEmp, userid: e.target.value})} required /></div>
                 <div className="fg"><label>Password *</label><input type="password" value={newEmp.password} onChange={(e) => setNewEmp({...newEmp, password: e.target.value})} required /></div>
               </div>
-              <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Save Employee</button>
+              <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>{editId ? "Update Employee" : "Save Employee"}</button>
             </form>
           </div>
         </div>

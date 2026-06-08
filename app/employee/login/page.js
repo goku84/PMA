@@ -3,9 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { IconUserPlus, IconLockOpen, IconArrowLeft, IconAlertCircle, IconCheck } from "@tabler/icons-react";
 
 export default function EmployeeLogin() {
@@ -36,35 +34,45 @@ export default function EmployeeLogin() {
           setErrorMsg("Name field cannot be blank.");
           return;
         }
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await addDoc(collection(db, "employees"), {
-          uid: cred.user.uid,
-          name: name,
+        const { data: authData, error: authError } = await supabase.auth.signUp({
           email: email,
-          status: "active",
-          timestamp: serverTimestamp(),
+          password: password,
         });
+        if (authError) throw authError;
+
+        const { error: dbError } = await supabase.from('employees').insert([
+          {
+            auth_user_id: authData.user.id,
+            name: name,
+            email: email,
+            status: "active",
+          }
+        ]);
+        if (dbError) throw dbError;
+
         setSuccessMsg("Registration complete! Redirecting...");
       } else {
-        // Find email by userid
-        const q = query(collection(db, "employees"), where("userid", "==", email));
-        const querySnapshot = await getDocs(q);
+        // Find email by userid or email
+        const { data: empData } = await supabase.from('employees').select('email, status').or(`userid.eq.${email},email.eq.${email}`);
         let loginEmail = email; // Fallback to what they typed if it's an email
-        if (!querySnapshot.empty) {
-          loginEmail = querySnapshot.docs[0].data().email;
+        if (empData && empData.length > 0) {
+          if (empData[0].status === 'inactive') {
+            throw new Error("Your account is inactive. Please contact the administrator.");
+          }
+          loginEmail = empData[0].email;
         }
-        await signInWithEmailAndPassword(auth, loginEmail, password);
+
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: password,
+        });
+        if (loginError) throw loginError;
+
         setSuccessMsg("Authentication successful. Redirecting...");
       }
       setTimeout(() => router.push("/employee/dashboard"), 1000);
     } catch (err) {
-      let msg = "Authentication failed. Please try again.";
-      if (err.code === 'auth/user-not-found') msg = "User does not exist.";
-      else if (err.code === 'auth/wrong-password') msg = "Incorrect password.";
-      else if (err.code === 'auth/invalid-email') msg = "Invalid email address.";
-      else if (err.code === 'auth/invalid-credential') msg = "Invalid credentials provided.";
-      else if (err.code === 'auth/email-already-in-use') msg = "Email is already in use.";
-      else if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
+      let msg = err.message || "Authentication failed. Please try again.";
       setErrorMsg(msg);
     }
   };
