@@ -49,7 +49,7 @@ export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [activeLogTab, setActiveLogTab] = useState("attendance");
   const [currentTime, setCurrentTime] = useState("");
-  const [reportFormType, setReportFormType] = useState("daily");
+  const [reportFormType, setReportFormType] = useState("weekly");
   const [isUploading, setIsUploading] = useState(false);
 
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
@@ -71,19 +71,18 @@ export default function EmployeeDashboard() {
   const [repFilterTo, setRepFilterTo] = useState(getLocalToday());
   const [repFilterType, setRepFilterType] = useState("all");
 
+  const [pointFilterPeriod, setPointFilterPeriod] = useState("all");
+  const [pointFilterFrom, setPointFilterFrom] = useState(getLocalToday());
+  const [pointFilterTo, setPointFilterTo] = useState(getLocalToday());
+
   const [callsSnap, setCallsSnap] = useState([]);
   const [shopsSnap, setShopsSnap] = useState([]);
   const [repsSnap, setRepsSnap] = useState([]);
   const [attSnap, setAttSnap] = useState([]);
-  const [tasksSnap, setTasksSnap] = useState([]);
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [execSnap, setExecSnap] = useState([]);
-  const [execFilterFrom, setExecFilterFrom] = useState(getLocalToday());
-  const [execFilterTo, setExecFilterTo] = useState(getLocalToday());
-  const [execFilterSearch, setExecFilterSearch] = useState("");
 
-  const [modalType, setModalType] = useState(null); // 'call', 'shop', 'report', 'task_execution'
+  const [modalType, setModalType] = useState(null); // 'call', 'shop', 'report'
   const [productiveShops, setProductiveShops] = useState([{ name: "", location: "" }]);
+  const [reportAgencies, setReportAgencies] = useState([{ name: "", cgs: "" }]);
   const [actualName, setActualName] = useState("");
 
   useEffect(() => {
@@ -125,13 +124,11 @@ export default function EmployeeDashboard() {
 
   const fetchData = async (user) => {
     try {
-      const [calls, shops, reps, att, tasksRes, execsRes, employeeRes] = await Promise.all([
+      const [calls, shops, reps, att, employeeRes] = await Promise.all([
         supabase.from('calls').select('*').eq('logged_by', user.email),
         supabase.from('shops').select('*').eq('logged_by', user.email),
         supabase.from('reports').select('*').eq('logged_by', user.email),
         supabase.from('attendance').select('*').eq('email', user.email),
-        supabase.from('tasks').select('*').eq('employee_email', user.email),
-        supabase.from('task_executions').select('*').eq('employee_email', user.email),
         supabase.from('employees').select('name').eq('email', user.email).single(),
       ]);
 
@@ -139,15 +136,11 @@ export default function EmployeeDashboard() {
       const mapShops = shops.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapReps = reps.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapAtt = att.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const mapTasks = tasksRes.data?.map(d => ({ ...d, employeeEmail: d.employee_email, caseCount: d.case_count, completedCases: d.completed_cases, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const mapExecs = execsRes.data?.map(d => ({ ...d, taskId: d.task_id, agencyName: d.agency_name, productName: d.product_name, completedCases: d.completed_cases, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
 
       setCallsSnap(mapCalls);
       setShopsSnap(mapShops);
       setRepsSnap(mapReps);
       setAttSnap(mapAtt);
-      setTasksSnap(mapTasks);
-      setExecSnap(mapExecs);
       if (employeeRes.data && employeeRes.data.name) {
         setActualName(employeeRes.data.name);
       }
@@ -312,182 +305,74 @@ export default function EmployeeDashboard() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const rType = fd.get("r_type");
+    
+    const fromDate = fd.get("r_from_date");
+    const toDate = fd.get("r_to_date");
+    const note = fd.get("r_note");
+
+    let formattedContent = `Period: ${fromDate} to ${toDate}\n\nAgencies Visited:\n`;
+    reportAgencies.forEach((agency, index) => {
+      formattedContent += `${index + 1}. ${agency.name} - ${agency.cgs} CGs\n`;
+    });
+    if (note) {
+      formattedContent += `\nNote:\n${note}`;
+    }
+
     try {
       const reportData = {
         title: fd.get("r_title"),
         type: rType,
-        content: fd.get("r_content"),
+        content: formattedContent,
         logged_by: activeUser.email,
         created_at: new Date().toISOString(),
       };
-      if (rType === "daily") {
-        reportData.total_sales_amount = 0;
-      }
       const { error } = await supabase.from("reports").insert(reportData);
       if (error) throw error;
       alert("Report successfully filed!");
       setModalType(null);
-      setReportFormType("daily");
+      setReportFormType("weekly");
+      setReportAgencies([{ name: "", cgs: "" }]);
       fetchData(activeUser);
     } catch (err) {
       alert(err.message);
     }
   };
 
-  const submitTaskExecution = async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const completed = parseInt(fd.get("t_cases"), 10) || 0;
-    try {
-      const executionData = {
-        task_id: selectedTask.id,
-        agency_name: fd.get("t_agency"),
-        product_name: fd.get("t_product"),
-        completed_cases: completed,
-        employee_email: activeUser.email,
-        created_at: new Date().toISOString(),
-      };
+  // Points Calculation for Dashboard (All Time)
+  const allAttPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
+  const allCallsByDate = {};
+  callsSnap.forEach(c => {
+    if (!c.timestamp || !c.timestamp.seconds) return;
+    const dt = new Date(c.timestamp.seconds * 1000);
+    dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+    const dateStr = dt.toISOString().split("T")[0];
+    allCallsByDate[dateStr] = (allCallsByDate[dateStr] || 0) + 1;
+  });
+  let allCallPoints = 0;
+  for (const date in allCallsByDate) {
+    if (allCallsByDate[date] >= 20) allCallPoints += 5;
+    else if (allCallsByDate[date] >= 16) allCallPoints += 3;
+  }
+  const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
+  const allShopPoints = Math.floor(shopsSnap.length / 100) * 50;
+  const totalPoints = allAttPoints + allCallPoints + allRepPoints + allShopPoints;
 
-      const { error: execError } = await supabase.from("task_executions").insert(executionData);
-      if (execError) throw execError;
-
-      const newCompleted = (selectedTask.completedCases || 0) + completed;
-      const newStatus = newCompleted >= selectedTask.caseCount ? "completed" : "in progress";
-
-      const { error: updateError } = await supabase.from("tasks").update({
-        completed_cases: newCompleted,
-        status: newStatus
-      }).eq('id', selectedTask.id);
-      
-      if (updateError) throw updateError;
-
-      alert("Task execution logged successfully!");
-      setModalType(null);
-      setSelectedTask(null);
-      fetchData(activeUser);
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const attPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
-
-  const callsByDate = {};
+  // Calls Today Calculation for Dashboard
+  const realToday = new Date();
+  realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
+  const todayStr = realToday.toISOString().split("T")[0];
+  let callsTodayCount = 0;
   callsSnap.forEach(c => {
     if (c.timestamp && c.timestamp.seconds) {
       const dt = new Date(c.timestamp.seconds * 1000);
       dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-      const dateStr = dt.toISOString().split("T")[0];
-      callsByDate[dateStr] = (callsByDate[dateStr] || 0) + 1;
-    }
-  });
-  let callTotalPoints = 0;
-  for (const date in callsByDate) {
-    if (callsByDate[date] >= 20) callTotalPoints += 5;
-    else if (callsByDate[date] >= 16) callTotalPoints += 3;
-  }
-
-  const repPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  let monthlyShopsCount = 0;
-  shopsSnap.forEach(s => {
-    if (s.timestamp && s.timestamp.seconds) {
-      const dt = new Date(s.timestamp.seconds * 1000);
-      if (dt.getMonth() === currentMonth && dt.getFullYear() === currentYear) {
-        monthlyShopsCount++;
+      if (dt.toISOString().split("T")[0] === todayStr) {
+        callsTodayCount++;
       }
     }
   });
-  const shopPoints = Math.floor(monthlyShopsCount / 100) * 50;
-  
-  let targetPoints = 0;
-  tasksSnap.forEach(t => {
-    if (t.caseCount && t.caseCount > 0) {
-      const completionRatio = (t.completedCases || 0) / t.caseCount;
-      if (completionRatio >= 1.0) targetPoints += 100;
-      else if (completionRatio >= 0.9) targetPoints += 75;
-    }
-  });
-
-  const totalPoints = attPoints + callTotalPoints + repPoints + shopPoints + targetPoints;
-
-  const renderAllocatedTasks = () => {
-    const tasks = [...tasksSnap].sort((a, b) => {
-      const tA = a.timestamp ? a.timestamp.seconds : 0;
-      const tB = b.timestamp ? b.timestamp.seconds : 0;
-      return tB - tA;
-    });
-
-    return (
-      <div className="card">
-        <div className="ctit">Allocated Target Tasks</div>
-        <p style={{ color: "var(--tx2)", marginBottom: "16px", fontSize: "13px" }}>Manage and execute the targets assigned to you by your managers.</p>
-        <div className="tw">
-          <table>
-            <thead>
-              <tr>
-                <th>Date Assigned</th>
-                <th>Target Cases</th>
-                <th>Progress</th>
-                <th>Notes</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.length > 0 ? (
-                tasks.map((t, i) => {
-                  let dStr = "—";
-                  if (t.timestamp && t.timestamp.seconds) {
-                    dStr = new Date(t.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
-                  }
-                  const comp = t.completedCases || 0;
-                  const ratio = t.caseCount > 0 ? Math.min(100, Math.round((comp / t.caseCount) * 100)) : 0;
-                  return (
-                    <tr key={i}>
-                      <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
-                      <td><b>{t.caseCount}</b></td>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <div style={{ flex: 1, height: "6px", background: "var(--bdr)", borderRadius: "3px", overflow: "hidden" }}>
-                            <div style={{ width: `${ratio}%`, height: "100%", background: ratio >= 100 ? "var(--ok)" : "var(--ind)" }}></div>
-                          </div>
-                          <b style={{ fontSize: "12px", color: ratio >= 100 ? "var(--ok)" : "var(--tx)" }}>{comp}</b>
-                        </div>
-                      </td>
-                      <td>{t.notes}</td>
-                      <td><span className={`bdg ${t.status === 'completed' ? 'b-ok' : 'b-am'}`}>{t.status}</span></td>
-                      <td>
-                        {t.status !== 'completed' ? (
-                          <button className="btn btn-ok" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => { setSelectedTask(t); setModalType("task_execution"); }}>
-                            Log Execution
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: "12px", color: "var(--tx3)" }}>Fully Executed</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>
-                    No tasks currently allocated to you.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
 
   const renderDashboard = () => {
-    const realToday = new Date();
-    realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
-    const todayStr = realToday.toISOString().split("T")[0];
     const todayAtt = attSnap.find((d) => d.date === todayStr);
 
     let shiftHrs = 0;
@@ -503,86 +388,116 @@ export default function EmployeeDashboard() {
 
     return (
       <>
-        <div style={{ marginBottom: "22px" }}>
+        <style>{`
+          .dashboard-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          .dashboard-stats-grid {
+            order: 1;
+            margin-bottom: 0 !important;
+          }
+          .dashboard-top-section {
+            order: 2;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 16px;
+          }
+          @media (max-width: 768px) {
+            .dashboard-top-section {
+              display: flex;
+              flex-direction: column;
+              order: 1;
+            }
+            .dashboard-stats-grid {
+              order: 2;
+            }
+          }
+        `}</style>
+        <div style={{ marginBottom: "16px" }}>
           <h2 style={{ fontSize: "22px", fontWeight: 800 }}>
             {greeting}, {userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'Agent'}! 👋
           </h2>
-          <p style={{ color: "var(--tx2)" }}>
+          <p style={{ color: "var(--tx2)", margin: "4px 0 0 0" }}>
             Here's your productivity overview for today.
           </p>
         </div>
-        <div className="kg">
-          <div className="kc">
-            <div className="ki"><IconTrophy /></div>
-            <div className="kl">Total Points</div>
-            <div className="kv">{totalPoints}</div>
-            <div className="ks">🥈 Active Session</div>
-          </div>
-          <div className="kc gd">
-            <div className="ki"><IconPhoneCall /></div>
-            <div className="kl">Calls Today</div>
-            <div className="kv">{callsByDate[todayStr] || 0}</div>
-            <div className="ks">Target: 20/day</div>
-          </div>
-          <div className="kc ok">
-            <div className="ki"><IconBuildingStore /></div>
-            <div className="kl">Shops</div>
-            <div className="kv">{shopsSnap.length}</div>
-            <div className="ks">Live records</div>
-          </div>
-          <div className={`kc ${todayAtt ? "ok" : ""}`}>
-            <div className="ki"><IconClock /></div>
-            <div className="kl">Attendance</div>
-            <div className="kv">{todayAtt ? "Present" : "—"}</div>
-            <div className="ks">{todayAtt ? "Checked in today" : "Not checked in"}</div>
-          </div>
-        </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px" }}>
-          <div className="ach" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", margin: 0, padding: "30px", background: "var(--sur)", borderRadius: "12px", border: "1px solid var(--bd)" }}>
-            <div style={{ textAlign: "center", width: "100%" }}>
-              <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--tx)", marginBottom: "4px" }}>{currentTime}</div>
-              <div style={{ fontSize: "14px", color: "var(--tx2)", marginBottom: "24px" }}>{new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
-              {todayAtt ? (
-                todayAtt.out ? (
-                  <button className="btn" disabled style={{ background: "rgba(255,255,255,0.1)", color: "var(--tx2)", padding: "12px 0", borderRadius: "30px", fontWeight: 600, width: "100%" }}>Shift Completed for Today</button>
-                ) : (
-                  <div style={{ position: "relative", width: "100%" }}>
-                    <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
-                    <button className="btn" style={{ background: "var(--no)", color: "#fff", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
-                      <IconLogout size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check Out"}
-                    </button>
-                  </div>
-                )
-              ) : (
-                <div style={{ position: "relative", width: "100%" }}>
-                  <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
-                  <button className="btn" style={{ background: "#fff", color: "var(--ok)", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
-                    <IconLogin size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check In"}
-                  </button>
-                </div>
-              )}
-
-              <div style={{ marginTop: "40px", textAlign: "left" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--tx2)", marginBottom: "8px" }}>
-                  <span>Shift Progress</span>
-                  <span>{Math.floor(shiftHrs)}:{Math.floor((shiftHrs % 1) * 60).toString().padStart(2, '0')} / 4:00 hrs</span>
-                </div>
-                <div className="pt" style={{ height: "10px", background: "var(--bdr)", borderRadius: "10px", overflow: "hidden" }}>
-                  <div className="pf" style={{ width: `${shiftPercent}%`, height: "100%", background: todayAtt && !todayAtt.out ? "var(--ok)" : "var(--tx2)" }}></div>
-                </div>
-              </div>
+        <div className="dashboard-layout">
+          <div className="kg dashboard-stats-grid">
+            <div className="kc">
+              <div className="ki"><IconTrophy /></div>
+              <div className="kl">Total Points</div>
+              <div className="kv">{totalPoints}</div>
+              <div className="ks">🥈 Active Session</div>
+            </div>
+            <div className="kc gd">
+              <div className="ki"><IconPhoneCall /></div>
+              <div className="kl">Productive Calls</div>
+              <div className="kv">{callsTodayCount}</div>
+              <div className="ks">Target: 16 (min)</div>
+            </div>
+            <div className="kc ok">
+              <div className="ki"><IconBuildingStore /></div>
+              <div className="kl">Shops</div>
+              <div className="kv">{shopsSnap.length}</div>
+              <div className="ks">Live records</div>
+            </div>
+            <div className={`kc ${todayAtt ? "ok" : ""}`}>
+              <div className="ki"><IconClock /></div>
+              <div className="kl">Attendance</div>
+              <div className="kv">{todayAtt ? "Present" : "—"}</div>
+              <div className="ks">{todayAtt ? "Checked in today" : "Not checked in"}</div>
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", margin: 0 }}>
-              <div className="ctit">Quick Actions</div>
-              <p style={{ color: "var(--tx2)", marginBottom: "16px", fontSize: "13px" }}>Create new records for your daily activities.</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, justifyContent: "center" }}>
-                <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("call")}><IconPhoneCall size={18} /> Log Productive Call</button>
-                <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("shop")}><IconBuildingStore size={18} /> Add Shop</button>
-                <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => { setModalType("report"); setReportFormType("daily"); }}><IconFileReport size={18} /> New Report</button>
+          <div className="dashboard-top-section">
+            <div className="ach" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", margin: 0, padding: "30px", background: "var(--sur)", borderRadius: "12px", border: "1px solid var(--bd)" }}>
+              <div style={{ textAlign: "center", width: "100%" }}>
+                <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--tx)", marginBottom: "4px" }}>{currentTime}</div>
+                <div style={{ fontSize: "14px", color: "var(--tx2)", marginBottom: "24px" }}>{new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+                {todayAtt ? (
+                  todayAtt.out ? (
+                    <button className="btn" disabled style={{ background: "rgba(255,255,255,0.1)", color: "var(--tx2)", padding: "12px 0", borderRadius: "30px", fontWeight: 600, width: "100%" }}>Shift Completed for Today</button>
+                  ) : (
+                    <div style={{ position: "relative", width: "100%" }}>
+                      <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
+                      <button className="btn" style={{ background: "var(--no)", color: "#fff", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
+                        <IconLogout size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check Out"}
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <div style={{ position: "relative", width: "100%" }}>
+                    <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
+                    <button className="btn" style={{ background: "#fff", color: "var(--ok)", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
+                      <IconLogin size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check In"}
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ marginTop: "40px", textAlign: "left" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--tx2)", marginBottom: "8px" }}>
+                    <span>Shift Progress</span>
+                    <span>{Math.floor(shiftHrs)}:{Math.floor((shiftHrs % 1) * 60).toString().padStart(2, '0')} / 4:00 hrs</span>
+                  </div>
+                  <div className="pt" style={{ height: "10px", background: "var(--bdr)", borderRadius: "10px", overflow: "hidden" }}>
+                    <div className="pf" style={{ width: `${shiftPercent}%`, height: "100%", background: todayAtt && !todayAtt.out ? "var(--ok)" : "var(--tx2)" }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", margin: 0 }}>
+                <div className="ctit">Quick Actions</div>
+                <p style={{ color: "var(--tx2)", marginBottom: "16px", fontSize: "13px" }}>Create new records for your daily activities.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, justifyContent: "center" }}>
+                  <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("call")}><IconPhoneCall size={18} /> Log Productive Call</button>
+                  <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => setModalType("shop")}><IconBuildingStore size={18} /> Add Shop</button>
+                  <button className="btn btn-p" style={{ padding: "12px", fontWeight: 600, display: "flex", justifyContent: "center", gap: "8px", width: "100%" }} onClick={() => { setModalType("report"); setReportFormType("weekly"); }}><IconFileReport size={18} /> New Report</button>
+                </div>
               </div>
             </div>
           </div>
@@ -785,21 +700,6 @@ export default function EmployeeDashboard() {
     const itemsPerPage = 7;
     const totalPages = Math.ceil(dateKeys.length / itemsPerPage);
     const paginatedDates = dateKeys.slice((callPage - 1) * itemsPerPage, callPage * itemsPerPage);
-
-    const realToday = new Date();
-    realToday.setMinutes(realToday.getMinutes() - realToday.getTimezoneOffset());
-    const todayStr = realToday.toISOString().split("T")[0];
-
-    let callsTodayCount = 0;
-    callsSnap.forEach(c => {
-      if (c.timestamp && c.timestamp.seconds) {
-        const dt = new Date(c.timestamp.seconds * 1000);
-        dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-        if (dt.toISOString().split("T")[0] === todayStr) {
-          callsTodayCount++;
-        }
-      }
-    });
 
     let callPoints = 0;
     if (callsTodayCount >= 20) callPoints = 5;
@@ -1017,7 +917,51 @@ export default function EmployeeDashboard() {
 
     return (
       <>
-        <div className="kg">
+        <style>{`
+          @media (max-width: 768px) {
+            .reports-stats-grid {
+              display: grid !important;
+              grid-template-columns: repeat(6, 1fr) !important;
+              gap: 10px !important;
+            }
+            .reports-stats-grid > .kc {
+              grid-column: span 2;
+              padding: 12px 8px !important;
+              min-width: 0; /* allows text truncation if needed */
+            }
+            .reports-stats-grid > .kc:nth-child(4),
+            .reports-stats-grid > .kc:nth-child(5) {
+              grid-column: span 3;
+            }
+            .reports-stats-grid .kl {
+              font-size: 11px !important;
+              line-height: 1.2 !important;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .reports-stats-grid .kv {
+              font-size: 20px !important;
+              margin: 4px 0 !important;
+            }
+            .reports-stats-grid .ks {
+              font-size: 10px !important;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .reports-stats-grid .ki {
+              margin-bottom: 8px !important;
+              width: 28px !important;
+              height: 28px !important;
+            }
+            .reports-stats-grid .ki svg {
+              width: 16px !important;
+              height: 16px !important;
+            }
+          }
+        `}</style>
+        <div className="kg reports-stats-grid">
           <div className="kc">
             <div className="ki"><IconFileAnalytics /></div>
             <div className="kl">Submitted</div>
@@ -1098,151 +1042,124 @@ export default function EmployeeDashboard() {
     );
   };
 
-  const renderExecutions = () => {
-    const filteredExecs = execSnap.filter(d => {
-      let dateStr = "";
-      if (d.timestamp && d.timestamp.seconds) {
-        const dt = new Date(d.timestamp.seconds * 1000);
-        dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-        dateStr = dt.toISOString().split("T")[0];
-      }
-      if (execFilterFrom && dateStr && dateStr < execFilterFrom) return false;
-      if (execFilterTo && dateStr && dateStr > execFilterTo) return false;
-      if (execFilterSearch && d.agencyName && !d.agencyName.toLowerCase().includes(execFilterSearch.toLowerCase())) return false;
-      return true;
-    }).sort((a, b) => {
-      const tA = a.timestamp ? a.timestamp.seconds : 0;
-      const tB = b.timestamp ? b.timestamp.seconds : 0;
-      return tB - tA;
-    });
 
-    let totalCases = 0;
-    filteredExecs.forEach(e => totalCases += (e.completedCases || 0));
+
+  const renderPoints = () => {
+    const isWithinPointFilter = (timestamp) => {
+      if (!timestamp || !timestamp.seconds) return false;
+      const dt = new Date(timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      const dateStr = dt.toISOString().split("T")[0];
+      const d = new Date();
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      const today = d.toISOString().split("T")[0];
+
+      if (pointFilterPeriod === "today") {
+        return dateStr === today;
+      } else if (pointFilterPeriod === "this_week") {
+        const day = d.getDay() || 7;
+        const t = new Date(d);
+        t.setDate(t.getDate() - (day - 1));
+        const weekStart = t.toISOString().split("T")[0];
+        return dateStr >= weekStart && dateStr <= today;
+      } else if (pointFilterPeriod === "monthly") {
+        const monthPrefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        return dateStr.startsWith(monthPrefix);
+      } else if (pointFilterPeriod === "yearly") {
+        const yearPrefix = `${d.getFullYear()}`;
+        return dateStr.startsWith(yearPrefix);
+      } else if (pointFilterPeriod === "custom") {
+        return (!pointFilterFrom || dateStr >= pointFilterFrom) && (!pointFilterTo || dateStr <= pointFilterTo);
+      }
+      return true; // all
+    };
+
+    const filteredAttPoints = attSnap.filter(a => isWithinPointFilter(a.timestamp)).reduce((acc, curr) => acc + (curr.points || 0), 0);
+    const filteredCallsByDate = {};
+    callsSnap.filter(c => isWithinPointFilter(c.timestamp)).forEach(c => {
+      const dt = new Date(c.timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      const dateStr = dt.toISOString().split("T")[0];
+      filteredCallsByDate[dateStr] = (filteredCallsByDate[dateStr] || 0) + 1;
+    });
+    let filteredCallPoints = 0;
+    for (const date in filteredCallsByDate) {
+      if (filteredCallsByDate[date] >= 20) filteredCallPoints += 5;
+      else if (filteredCallsByDate[date] >= 16) filteredCallPoints += 3;
+    }
+    const filteredRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved" && isWithinPointFilter(r.timestamp)).length * 15;
+    let filteredMonthlyShopsCount = 0;
+    shopsSnap.filter(s => isWithinPointFilter(s.timestamp)).forEach(() => {
+      filteredMonthlyShopsCount++;
+    });
+    const filteredShopPoints = Math.floor(filteredMonthlyShopsCount / 100) * 50;
+    const filteredTotalPoints = filteredAttPoints + filteredCallPoints + filteredRepPoints + filteredShopPoints;
 
     return (
-      <>
-        <div className="kg">
-          <div className="kc gd">
-            <div className="ki"><IconListCheck /></div>
-            <div className="kl">Executions Logged</div>
-            <div className="kv">{filteredExecs.length}</div>
-            <div className="ks">Target operations</div>
-          </div>
-          <div className="kc ok">
-            <div className="ki"><IconStar /></div>
-            <div className="kl">Cases Completed</div>
-            <div className="kv">{totalCases}</div>
-            <div className="ks">Total individual cases</div>
-          </div>
-          <div className="kc" style={{ borderLeft: "4px solid var(--pur)", background: "var(--sur2)" }}>
-            <div className="ki" style={{ color: "var(--pur)" }}><IconStar /></div>
-            <div className="kl">Points Earned</div>
-            <div className="kv">{targetPoints}</div>
-            <div className="ks">Bonus target pts</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", padding: "16px 20px" }}>
+          <span className="ctit" style={{ margin: 0 }}>Points Filter</span>
+          <div className="filter-row" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <select value={pointFilterPeriod} onChange={(e) => setPointFilterPeriod(e.target.value)} style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", outline: "none" }}>
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="this_week">This Week</option>
+              <option value="monthly">This Month</option>
+              <option value="yearly">This Year</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+            {pointFilterPeriod === "custom" && (
+              <>
+                <input type="date" value={pointFilterFrom} onChange={(e) => setPointFilterFrom(e.target.value)} style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", outline: "none" }} />
+                <input type="date" value={pointFilterTo} onChange={(e) => setPointFilterTo(e.target.value)} style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", outline: "none" }} />
+              </>
+            )}
           </div>
         </div>
-
-        <div className="card">
-          <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-            <span>Target Execution History</span>
-            <div className="filter-row">
-              <input type="text" placeholder="Search Agency" value={execFilterSearch} onChange={(e) => setExecFilterSearch(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
-              <input type="date" value={execFilterFrom} onChange={(e) => setExecFilterFrom(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
-              <input type="date" value={execFilterTo} onChange={(e) => setExecFilterTo(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div className="card" style={{ textAlign: "center", padding: "32px" }}>
+            <div style={{ fontSize: "58px", fontWeight: 800, color: "var(--ind)", lineHeight: 1 }}>
+              {filteredTotalPoints}
+            </div>
+            <div style={{ fontSize: "14px", color: "var(--tx2)", margin: "6px 0 14px" }}>
+              Total Accumulation Points
+            </div>
+            <span className="bdg b-am" style={{ fontSize: "13px", padding: "6px 14px" }}>
+              🥈 Rank #2 of 5
+            </span>
+          </div>
+          <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+            <div className="ctit" style={{ marginBottom: "16px" }}>Points Breakdown Map</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, justifyContent: "center" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconPhoneCall size={18} /></div>
+                  <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Productive Calls</span>
+                </div>
+                <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredCallPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
+              </div>
+              
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconFileReport size={18} /></div>
+                  <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Weekly Submissions</span>
+                </div>
+                <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredRepPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
+              </div>
+              
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconBuildingStore size={18} /></div>
+                  <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Shop Indexing (Monthly)</span>
+                </div>
+                <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredShopPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
+              </div>
             </div>
           </div>
-          <div className="tw">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date Logged</th>
-                  <th>Agency Name</th>
-                  <th>Product Details</th>
-                  <th>Cases Completed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredExecs.length > 0 ? (
-                  filteredExecs.map((d, i) => {
-                    let dStr = "—";
-                    if (d.timestamp && d.timestamp.seconds) {
-                      dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
-                    }
-                    return (
-                      <tr key={i}>
-                        <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
-                        <td><b>{d.agencyName}</b></td>
-                        <td>{d.productName}</td>
-                        <td><b>{d.completedCases}</b> Cases</td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan="4" style={{ textAlign: "center", color: "var(--tx3)" }}>
-                      No target execution logs found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
-      </>
+      </div>
     );
   };
-
-  const renderPoints = () => (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-      <div className="card" style={{ textAlign: "center", padding: "32px" }}>
-        <div style={{ fontSize: "58px", fontWeight: 800, color: "var(--ind)", lineHeight: 1 }}>
-          {totalPoints}
-        </div>
-        <div style={{ fontSize: "14px", color: "var(--tx2)", margin: "6px 0 14px" }}>
-          Total Accumulation Points
-        </div>
-        <span className="bdg b-am" style={{ fontSize: "13px", padding: "6px 14px" }}>
-          🥈 Rank #2 of 5
-        </span>
-      </div>
-      <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-        <div className="ctit" style={{ marginBottom: "16px" }}>Points Breakdown Map</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, justifyContent: "center" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconPhoneCall size={18} /></div>
-              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Productive Calls</span>
-            </div>
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{callTotalPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
-          </div>
-          
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconFileReport size={18} /></div>
-              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Weekly Submissions</span>
-            </div>
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{repPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
-          </div>
-          
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconBuildingStore size={18} /></div>
-              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Shop Indexing (Monthly)</span>
-            </div>
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{shopPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
-          </div>
-          
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconTarget size={18} /></div>
-              <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Target Tasks Bonus</span>
-            </div>
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{targetPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 
   if (loading)
     return (
@@ -1287,10 +1204,6 @@ export default function EmployeeDashboard() {
             <IconFileReport size={18} />
             Logs
           </button>
-          <button className={`ni ${activeTab === "allocatedTasks" ? "on" : ""}`} onClick={() => { setActiveTab("allocatedTasks"); setIsMobileMenuOpen(false); }}>
-            <IconListCheck size={18} />
-            Allocated Tasks
-          </button>
         </div>
         <div className="sb-foot">
           <div className="upill">
@@ -1327,7 +1240,6 @@ export default function EmployeeDashboard() {
 
         <main className="pg">
           {activeTab === "dashboard" && renderDashboard()}
-          {activeTab === "allocatedTasks" && renderAllocatedTasks()}
           {activeTab === "logs" && (
             <>
               <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid var(--bdr)", paddingBottom: "15px", flexWrap: "wrap" }}>
@@ -1335,14 +1247,12 @@ export default function EmployeeDashboard() {
                 <button className={`btn ${activeLogTab === "calls" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("calls")} style={activeLogTab !== "calls" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Productive Calls</button>
                 <button className={`btn ${activeLogTab === "shops" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("shops")} style={activeLogTab !== "shops" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Shops</button>
                 <button className={`btn ${activeLogTab === "reports" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("reports")} style={activeLogTab !== "reports" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Reports</button>
-                <button className={`btn ${activeLogTab === "executions" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("executions")} style={activeLogTab !== "executions" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Targets</button>
                 <button className={`btn ${activeLogTab === "points" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("points")} style={activeLogTab !== "points" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Points</button>
               </div>
               {activeLogTab === "attendance" && renderAttendance()}
               {activeLogTab === "calls" && renderCalls()}
               {activeLogTab === "shops" && renderShops()}
               {activeLogTab === "reports" && renderReports()}
-              {activeLogTab === "executions" && renderExecutions()}
               {activeLogTab === "points" && renderPoints()}
             </>
           )}
@@ -1416,36 +1326,38 @@ export default function EmployeeDashboard() {
             {modalType === "report" && (
               <form onSubmit={submitReportForm}>
                 <div className="mh">
-                  <div>File Field Operations Summary Report</div>
-                  <button type="button" onClick={() => setModalType(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
+                  <div>File Weekly Operations Summary Report</div>
+                  <button type="button" onClick={() => { setModalType(null); setReportAgencies([{ name: "", cgs: "" }]); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
                 </div>
-                <div className="fg"><label>Report Title Context *</label><input type="text" name="r_title" placeholder="Daily Report — May 28" required /></div>
-                <div className="fg"><label>Type Scope</label><select name="r_type" value={reportFormType} onChange={(e) => setReportFormType(e.target.value)}><option value="daily">Daily Log Record</option><option value="weekly">Weekly Compilation Grid</option></select></div>
-                {reportFormType === "daily" && null}
-                <div className="fg"><label>Detailed Core Narrative Content</label><textarea name="r_content" required style={{ width: "100%", minHeight: "80px", borderRadius: "8px", padding: "10px", border: "1.5px solid var(--bdr)" }}></textarea></div>
-                <button type="submit" className="btn btn-p" style={{ width: "100%" }}>Transmit Report Log</button>
-              </form>
-            )}
-
-            {modalType === "task_execution" && selectedTask && (
-              <form onSubmit={submitTaskExecution}>
-                <div className="mh">
-                  <div>Execute Task: {selectedTask.caseCount} Cases Target</div>
-                  <button type="button" onClick={() => { setModalType(null); setSelectedTask(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
+                <div className="fg"><label>Report Title Context *</label><input type="text" name="r_title" placeholder="Weekly Report — May 28" required /></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                  <div className="fg"><label>From Date *</label><input type="date" name="r_from_date" required /></div>
+                  <div className="fg"><label>To Date *</label><input type="date" name="r_to_date" required /></div>
                 </div>
-                <div style={{ marginBottom: "16px", padding: "12px", background: "var(--sur2)", borderRadius: "8px", fontSize: "13px" }}>
-                  <b>Progress:</b> {selectedTask.completedCases || 0} out of {selectedTask.caseCount} cases completed. Remaining: {Math.max(0, selectedTask.caseCount - (selectedTask.completedCases || 0))}.
+                <input type="hidden" name="r_type" value="weekly" />
+                <div style={{ margin: "16px 0", borderTop: "1px solid var(--bdr)", borderBottom: "1px solid var(--bdr)", padding: "16px 0", maxHeight: "300px", overflowY: "auto" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                    <label style={{ margin: 0 }}>Agencies Visited</label>
+                    <button type="button" className="btn" style={{ padding: "4px 10px", fontSize: "12px", background: "var(--sur2)", color: "var(--tx)" }} onClick={() => setReportAgencies([...reportAgencies, { name: "", cgs: "" }])}>
+                      + Add Agency
+                    </button>
+                  </div>
+                  {reportAgencies.map((agency, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "10px", marginBottom: "10px", alignItems: "end" }}>
+                      <div className="fg" style={{ margin: 0 }}>
+                        <input type="text" placeholder="Agency Name" value={agency.name} onChange={(e) => { const newA = [...reportAgencies]; newA[i].name = e.target.value; setReportAgencies(newA); }} required />
+                      </div>
+                      <div className="fg" style={{ margin: 0 }}>
+                        <input type="number" placeholder="No of CGs" value={agency.cgs} onChange={(e) => { const newA = [...reportAgencies]; newA[i].cgs = e.target.value; setReportAgencies(newA); }} required min="0" />
+                      </div>
+                      <button type="button" className="btn" style={{ background: "var(--no)", color: "#fff", padding: "10px", height: "42px" }} onClick={() => { if (reportAgencies.length > 1) { const newA = [...reportAgencies]; newA.splice(i, 1); setReportAgencies(newA); } }}>
+                        <IconX size={16} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <div className="fg"><label>Agency Name *</label><input type="text" name="t_agency" placeholder="e.g. ABC Agency" required /></div>
-                <div className="fg"><label>Product Name *</label><input type="text" name="t_product" placeholder="e.g. Dark Chocolate" required /></div>
-                <div className="fg">
-                  <label>Cases Completed for this Agency *</label>
-                  <input type="number" name="t_cases" placeholder="e.g. 12" required min="1" max={selectedTask.caseCount - (selectedTask.completedCases || 0)} onInput={(e) => {
-                    const maxVal = selectedTask.caseCount - (selectedTask.completedCases || 0);
-                    if (parseInt(e.target.value) > maxVal) e.target.value = maxVal;
-                  }} />
-                </div>
-                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Submit Execution Log</button>
+                <div className="fg"><label>Note</label><textarea name="r_note" placeholder="Any additional notes..." style={{ width: "100%", minHeight: "80px", borderRadius: "8px", padding: "10px", border: "1.5px solid var(--bdr)" }}></textarea></div>
+                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Transmit Report Log</button>
               </form>
             )}
           </div>

@@ -40,7 +40,6 @@ export default function AdminDashboard() {
   const [attSnap, setAttSnap] = useState(null);
 
   const [showAddEmployee, setShowAddEmployee] = useState(false);
-  const [showAssignTask, setShowAssignTask] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [newEmp, setNewEmp] = useState({
@@ -51,8 +50,6 @@ export default function AdminDashboard() {
     userid: "",
     password: ""
   });
-  const [newTask, setNewTask] = useState({ employeeEmail: "", caseCount: "", notes: "" });
-  const [tasksSnap, setTasksSnap] = useState(null);
   const [empFilterSearch, setEmpFilterSearch] = useState("");
   const [attFilterFrom, setAttFilterFrom] = useState(getLocalToday());
   const [attFilterTo, setAttFilterTo] = useState(getLocalToday());
@@ -75,17 +72,9 @@ export default function AdminDashboard() {
   const [dashFilterFrom, setDashFilterFrom] = useState(getLocalToday());
   const [dashFilterTo, setDashFilterTo] = useState(getLocalToday());
 
-  const [targetFilterType, setTargetFilterType] = useState("all");
-  const [targetFilterFrom, setTargetFilterFrom] = useState(getLocalToday());
-  const [targetFilterTo, setTargetFilterTo] = useState(getLocalToday());
-
   const [leaderFilterType, setLeaderFilterType] = useState("all");
   const [leaderFilterFrom, setLeaderFilterFrom] = useState(getLocalToday());
   const [leaderFilterTo, setLeaderFilterTo] = useState(getLocalToday());
-
-  const [targetPointsFilterType, setTargetPointsFilterType] = useState("all");
-  const [targetPointsFilterFrom, setTargetPointsFilterFrom] = useState(getLocalToday());
-  const [targetPointsFilterTo, setTargetPointsFilterTo] = useState(getLocalToday());
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -113,20 +102,18 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [empRes, attRes, callsRes, shopsRes, repsRes, tasksRes] = await Promise.all([
+      const [empRes, attRes, callsRes, shopsRes, repsRes] = await Promise.all([
         supabase.from('employees').select('*'),
         supabase.from('attendance').select('*'),
         supabase.from('calls').select('*'),
         supabase.from('shops').select('*'),
-        supabase.from('reports').select('*'),
-        supabase.from('tasks').select('*')
+        supabase.from('reports').select('*')
       ]);
 
       const mapCalls = callsRes.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapShops = shopsRes.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapReps = repsRes.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapAtt = attRes.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const mapTasks = tasksRes.data?.map(d => ({ ...d, employeeEmail: d.employee_email, caseCount: d.case_count, completedCases: d.completed_cases, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const empData = empRes.data || [];
 
       setEmployeesSnap(empData);
@@ -134,7 +121,6 @@ export default function AdminDashboard() {
       setCallsSnap(mapCalls.map(d => ({ id: d.id, data: () => d })));
       setShopsSnap(mapShops.map(d => ({ id: d.id, data: () => d })));
       setRepsSnap(mapReps.map(d => ({ id: d.id, data: () => d })));
-      setTasksSnap(mapTasks.map(d => ({ id: d.id, data: () => d })));
 
       const metricsMap = {};
 
@@ -158,7 +144,6 @@ export default function AdminDashboard() {
           shopPts: 0,
           reportCount: 0,
           reportPts: 0,
-          targetBonusPts: 0,
           totalPoints: 0,
         };
       });
@@ -193,13 +178,37 @@ export default function AdminDashboard() {
         metricsMap[email].callPts = pts;
       });
 
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
+      const getSalaryMonthRangeStr = () => {
+        const d = new Date();
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        let startYear = d.getFullYear();
+        let startMonth = d.getMonth();
+        if (d.getDate() < 11) {
+          startMonth -= 1;
+          if (startMonth < 0) {
+            startMonth = 11;
+            startYear -= 1;
+          }
+        }
+        let endMonth = startMonth + 1;
+        let endYear = startYear;
+        if (endMonth > 11) {
+          endMonth = 0;
+          endYear += 1;
+        }
+        const startStr = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-11`;
+        const endStr = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-10`;
+        return { startStr, endStr };
+      };
+
+      const { startStr: currentMonthStart, endStr: currentMonthEnd } = getSalaryMonthRangeStr();
 
       mapShops.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy] && d.status === "verified") {
           const dt = d.timestamp ? new Date(d.timestamp.seconds * 1000) : new Date();
-          if (dt.getMonth() === currentMonth && dt.getFullYear() === currentYear) {
+          dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+          const dateStr = dt.toISOString().split("T")[0];
+          if (dateStr >= currentMonthStart && dateStr <= currentMonthEnd) {
             metricsMap[d.loggedBy].shopCount++;
           }
         }
@@ -217,23 +226,11 @@ export default function AdminDashboard() {
         }
       });
 
-      mapTasks.forEach((d) => {
-        if (d.employeeEmail && metricsMap[d.employeeEmail] && d.caseCount > 0) {
-           const completionRatio = (d.completedCases || 0) / d.caseCount;
-           if (completionRatio >= 1.0) {
-              metricsMap[d.employeeEmail].targetBonusPts += 100;
-           } else if (completionRatio >= 0.9) {
-              metricsMap[d.employeeEmail].targetBonusPts += 75;
-           }
-        }
-      });
-
       const finalLeaderboard = Object.values(metricsMap).map((emp) => {
         emp.totalPoints =
           emp.callPts +
           emp.shopPts +
-          emp.reportPts +
-          emp.targetBonusPts;
+          emp.reportPts;
         return emp;
       });
 
@@ -295,25 +292,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAssignTask = async (e) => {
-    e.preventDefault();
-    try {
-      const { error } = await supabase.from('tasks').insert([{
-        employee_email: newTask.employeeEmail,
-        case_count: Number(newTask.caseCount),
-        notes: newTask.notes,
-        status: "assigned",
-      }]);
-      if (error) throw error;
-      alert("Task assigned successfully!");
-      setShowAssignTask(false);
-      setNewTask({ employeeEmail: "", caseCount: "", notes: "" });
-      fetchData();
-    } catch (err) {
-      alert("Error assigning task: " + err.message);
-    }
-  };
-
   const handleDeleteEmployee = async (id) => {
     if (window.confirm("Are you sure you want to delete this employee?")) {
       try {
@@ -360,10 +338,24 @@ export default function AdminDashboard() {
       fromDate = start.toISOString().split("T")[0];
       toDate = todayStr;
     } else if (dashFilterType === "month") {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1);
-      start.setMinutes(start.getMinutes() - start.getTimezoneOffset());
-      fromDate = start.toISOString().split("T")[0];
-      toDate = todayStr;
+      let startYear = today.getFullYear();
+      let startMonth = today.getMonth();
+      if (today.getDate() < 11) {
+        startMonth -= 1;
+        if (startMonth < 0) {
+          startMonth = 11;
+          startYear -= 1;
+        }
+      }
+      fromDate = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-11`;
+      
+      let endMonth = startMonth + 1;
+      let endYear = startYear;
+      if (endMonth > 11) {
+        endMonth = 0;
+        endYear += 1;
+      }
+      toDate = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-10`;
     } else if (dashFilterType === "year") {
       const start = new Date(today.getFullYear(), 0, 1);
       start.setMinutes(start.getMinutes() - start.getTimezoneOffset());
@@ -396,7 +388,6 @@ export default function AdminDashboard() {
         shopPts: 0,
         reportCount: 0,
         reportPts: 0,
-        targetBonusPts: 0,
         totalPoints: 0,
       };
     });
@@ -475,24 +466,8 @@ export default function AdminDashboard() {
       });
     }
 
-    if (tasksSnap) {
-      tasksSnap.forEach(doc => {
-        const d = doc.data();
-        if (isWithinRange(d.timestamp)) {
-          if (d.employeeEmail && dMetricsMap[d.employeeEmail] && d.caseCount > 0) {
-             const completionRatio = (d.completedCases || 0) / d.caseCount;
-             if (completionRatio >= 1.0) {
-                dMetricsMap[d.employeeEmail].targetBonusPts += 100;
-             } else if (completionRatio >= 0.9) {
-                dMetricsMap[d.employeeEmail].targetBonusPts += 75;
-             }
-          }
-        }
-      });
-    }
-
     const dashLeaderboard = Object.values(dMetricsMap).map((emp) => {
-      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + emp.targetBonusPts;
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts;
       return emp;
     }).sort((a, b) => b.totalPoints - a.totalPoints);
 
@@ -1346,9 +1321,24 @@ export default function AdminDashboard() {
         const s = new Date(today); s.setDate(s.getDate() - s.getDay());
         from = s.toISOString().split("T")[0]; to = todayStr;
       } else if (filterType === "month") {
-        const s = new Date(today.getFullYear(), today.getMonth(), 1);
-        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
-        from = s.toISOString().split("T")[0]; to = todayStr;
+        let startYear = today.getFullYear();
+        let startMonth = today.getMonth();
+        if (today.getDate() < 11) {
+          startMonth -= 1;
+          if (startMonth < 0) {
+            startMonth = 11;
+            startYear -= 1;
+          }
+        }
+        from = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-11`;
+        
+        let endMonth = startMonth + 1;
+        let endYear = startYear;
+        if (endMonth > 11) {
+          endMonth = 0;
+          endYear += 1;
+        }
+        to = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-10`;
       } else if (filterType === "year") {
         const s = new Date(today.getFullYear(), 0, 1);
         s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
@@ -1375,7 +1365,6 @@ export default function AdminDashboard() {
         shopPts: 0,
         reportCount: 0,
         reportPts: 0,
-        targetBonusPts: 0,
         totalPoints: 0,
       };
     });
@@ -1437,196 +1426,13 @@ export default function AdminDashboard() {
       });
     }
 
-    if (tasksSnap) {
-      tasksSnap.forEach(doc => {
-        const d = doc.data();
-        if (isWithinRange(d.timestamp)) {
-          if (d.employeeEmail && dMetricsMap[d.employeeEmail] && d.caseCount > 0) {
-             const completionRatio = (d.completedCases || 0) / d.caseCount;
-             if (completionRatio >= 1.0) {
-                dMetricsMap[d.employeeEmail].targetBonusPts += 100;
-             } else if (completionRatio >= 0.9) {
-                dMetricsMap[d.employeeEmail].targetBonusPts += 75;
-             }
-          }
-        }
-      });
-    }
-
     return Object.values(dMetricsMap).map((emp) => {
-      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + emp.targetBonusPts;
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts;
       return emp;
     }).sort((a, b) => b.totalPoints - a.totalPoints);
   };
 
-  const renderTargets = () => {
-    const targetsLeaderboard = computeLeaderboard(targetPointsFilterType, targetPointsFilterFrom, targetPointsFilterTo);
 
-    return (
-      <>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <select 
-              value={targetPointsFilterType} 
-              onChange={(e) => setTargetPointsFilterType(e.target.value)} 
-              style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", fontWeight: 600, color: "var(--tx)", outline: "none", cursor: "pointer", height: "34px", fontSize: "13px" }}
-            >
-              <option value="all">Overall (All Time)</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="year">This Year</option>
-              <option value="custom">Custom Range</option>
-            </select>
-            {targetPointsFilterType === "custom" && (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="date" value={targetPointsFilterFrom} onChange={(e) => setTargetPointsFilterFrom(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
-                <input type="date" value={targetPointsFilterTo} onChange={(e) => setTargetPointsFilterTo(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="card" style={{ textAlign: "left", marginBottom: "20px" }}>
-        <div className="ctit">System Gamified Points Scoring Rules Parameters</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
-          <div className="kc gd" style={{ background: "var(--sur2)" }}><div className="ki"><IconPhoneCall /></div><div className="kl">16 shops (3 pts) | 20 shops (5 pts)</div><div className="kv" style={{ fontSize: "16px" }}>Productive Calls</div><span className="bdg b-ok">Up to 5 pts/day</span></div>
-          <div className="kc ok" style={{ background: "var(--sur2)" }}><div className="ki"><IconBuildingStore /></div><div className="kl">100 verified shops/mo</div><div className="kv" style={{ fontSize: "16px" }}>Shops</div><span className="bdg b-ok">50 pts bonus</span></div>
-          <div className="kc" style={{ background: "var(--sur2)", borderLeft: "4px solid var(--pur)" }}><div className="ki"><IconFileReport /></div><div className="kl">Approved Weekly Reports</div><div className="kv" style={{ fontSize: "16px" }}>Reports</div><span className="bdg b-ok">15 pts/report</span></div>
-          <div className="kc" style={{ background: "var(--sur2)", borderLeft: "4px solid var(--ind)" }}><div className="ki"><IconListCheck /></div><div className="kl">90% (75pts) | 100% (100pts)</div><div className="kv" style={{ fontSize: "16px" }}>Targets</div><span className="bdg b-ok">Up to 100 pts</span></div>
-        </div>
-      </div>
-      <div className="card">
-        <div className="ctit">Calculated Cumulative Employee Ledger Scores Matrix</div>
-        <div className="tw">
-          <table>
-            <thead><tr><th>Rank Index</th><th>Field Operator Personnel</th><th>Productive Calls</th><th>Shop Placement</th><th>Reports</th><th>Targets</th><th>Total Points</th></tr></thead>
-            <tbody>
-              {targetsLeaderboard.length > 0 ? targetsLeaderboard.map((emp, index) => {
-                const rankMark = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`;
-                return (
-                  <tr key={emp.email}>
-                    <td><b>{rankMark}</b></td>
-                    <td><b>{emp.name}</b></td>
-                    <td>{emp.callPts || 0} pts</td>
-                    <td>{emp.shopPts || 0} pts</td>
-                    <td>{emp.reportPts || 0} pts</td>
-                    <td>{emp.targetBonusPts || 0} pts</td>
-                    <td><b style={{ color: "var(--ind)", fontSize: "15px" }}>{emp.totalPoints || 0} pts</b></td>
-                  </tr>
-                );
-              }) : <tr><td colSpan="7" style={{ textAlign: "center", color: "var(--tx3)" }}>No dynamic live ledger metrics compiled.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
-    );
-  };
-
-  const renderTargetAssignment = () => {
-    const isTargetWithinRange = (timestamp) => {
-      if (targetFilterType === "all") return true;
-      if (!timestamp || !timestamp.seconds) return false;
-      const today = new Date();
-      today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-      const todayStr = today.toISOString().split("T")[0];
-      let from = null, to = null;
-      if (targetFilterType === "today") { from = todayStr; to = todayStr; }
-      else if (targetFilterType === "yesterday") {
-        const y = new Date(today); y.setDate(y.getDate() - 1);
-        from = y.toISOString().split("T")[0]; to = from;
-      } else if (targetFilterType === "week") {
-        const s = new Date(today); s.setDate(s.getDate() - s.getDay());
-        from = s.toISOString().split("T")[0]; to = todayStr;
-      } else if (targetFilterType === "month") {
-        const s = new Date(today.getFullYear(), today.getMonth(), 1);
-        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
-        from = s.toISOString().split("T")[0]; to = todayStr;
-      } else if (targetFilterType === "year") {
-        const s = new Date(today.getFullYear(), 0, 1);
-        s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
-        from = s.toISOString().split("T")[0]; to = todayStr;
-      } else if (targetFilterType === "custom") {
-        from = targetFilterFrom; to = targetFilterTo;
-      }
-      const dt = new Date(timestamp.seconds * 1000);
-      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-      const dateStr = dt.toISOString().split("T")[0];
-      return dateStr >= from && dateStr <= to;
-    };
-
-    let taskList = [];
-    if (tasksSnap) {
-      tasksSnap.forEach(doc => {
-         const d = doc.data();
-         if (isTargetWithinRange(d.timestamp)) {
-           d.id = doc.id;
-           d.empName = metricsMatrix.find(e => e.email === d.employeeEmail)?.name || (d.employeeEmail ? d.employeeEmail.split('@')[0] : d.employeeEmail);
-           taskList.push(d);
-         }
-      });
-    }
-    taskList.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-
-    return (
-      <div className="card">
-        <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-          <span>Assigned Tasks</span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: "wrap" }}>
-            <select 
-              value={targetFilterType} 
-              onChange={(e) => setTargetFilterType(e.target.value)} 
-              style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", fontWeight: 600, color: "var(--tx)", outline: "none", cursor: "pointer", height: "34px", fontSize: "13px" }}
-            >
-              <option value="all">Overall (All Time)</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="year">This Year</option>
-              <option value="custom">Custom Range</option>
-            </select>
-            {targetFilterType === "custom" && (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="date" value={targetFilterFrom} onChange={(e) => setTargetFilterFrom(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
-                <input type="date" value={targetFilterTo} onChange={(e) => setTargetFilterTo(e.target.value)} style={{ padding: "6px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "#fff", height: "34px", outline: "none", color: "var(--tx)", fontSize: "13px" }} />
-              </div>
-            )}
-            <button className="btn btn-ok" onClick={() => setShowAssignTask(true)}>+ Add Assign Task</button>
-          </div>
-        </div>
-        <div className="tw">
-          <table>
-            <thead><tr><th>Date</th><th>Employee</th><th>Total Cases</th><th>Progress</th><th>Notes</th><th>Status</th></tr></thead>
-            <tbody>
-              {taskList.length > 0 ? taskList.map(t => {
-                const comp = t.completedCases || 0;
-                const ratio = t.caseCount > 0 ? Math.min(100, Math.round((comp / t.caseCount) * 100)) : 0;
-                return (
-                <tr key={t.id}>
-                  <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{t.timestamp ? new Date(t.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }) : "—"}</td>
-                  <td><b>{t.empName}</b></td>
-                  <td>{t.caseCount}</td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "100px" }}>
-                      <div style={{ flex: 1, height: "6px", background: "var(--bdr)", borderRadius: "3px", overflow: "hidden" }}>
-                        <div style={{ width: `${ratio}%`, height: "100%", background: ratio >= 100 ? "var(--ok)" : "var(--ind)" }}></div>
-                      </div>
-                      <b style={{ fontSize: "12px", color: ratio >= 100 ? "var(--ok)" : "var(--tx)" }}>{comp}</b>
-                    </div>
-                  </td>
-                  <td>{t.notes}</td>
-                  <td><span className={`bdg ${t.status === 'completed' ? 'b-ok' : 'b-am'}`}>{t.status}</span></td>
-                </tr>
-              )}) : <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>No tasks assigned.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
 
   const renderLeaderboard = () => {
     const leaderLeaderboard = computeLeaderboard(leaderFilterType, leaderFilterFrom, leaderFilterTo);
@@ -1732,8 +1538,6 @@ export default function AdminDashboard() {
           <button className={`ni ${activeTab === 'shops' ? 'on' : ''}`} onClick={() => { setActiveTab('shops'); setIsMobileMenuOpen(false); }}><IconBuildingStore size={18} />Shop Verify</button>
           <button className={`ni ${activeTab === 'reports' ? 'on' : ''}`} onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }}><IconFileReport size={18} />Reports</button>
           <div className="snl">Performance</div>
-          <button className={`ni ${activeTab === 'targets' ? 'on' : ''}`} onClick={() => { setActiveTab('targets'); setIsMobileMenuOpen(false); }}><IconTarget size={18} />Targets & Points</button>
-          <button className={`ni ${activeTab === 'targetAssignment' ? 'on' : ''}`} onClick={() => { setActiveTab('targetAssignment'); setIsMobileMenuOpen(false); }}><IconListCheck size={18} />Target Assignment</button>
           <button className={`ni ${activeTab === 'leaderboard' ? 'on' : ''}`} onClick={() => { setActiveTab('leaderboard'); setIsMobileMenuOpen(false); }}><IconTrophy size={18} />Leaderboard</button>
         </div>
         <div className="sb-foot">
@@ -1772,8 +1576,6 @@ export default function AdminDashboard() {
           {activeTab === "calls" && renderCalls()}
           {activeTab === "shops" && renderShops()}
           {activeTab === "reports" && renderReports()}
-          {activeTab === "targets" && renderTargets()}
-          {activeTab === "targetAssignment" && renderTargetAssignment()}
           {activeTab === "leaderboard" && renderLeaderboard()}
         </main>
       </div>
@@ -1804,36 +1606,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {showAssignTask && (
-        <div className="mo" style={{ display: "flex" }}>
-          <div className="md">
-            <form onSubmit={handleAssignTask}>
-              <div className="mh">
-                <div>Assign Task Target</div>
-                <button type="button" onClick={() => setShowAssignTask(false)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--tx2)" }}><IconX size={20} /></button>
-              </div>
-              <div className="fg">
-                <label>Employee *</label>
-                <select value={newTask.employeeEmail} onChange={(e) => setNewTask({...newTask, employeeEmail: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)" }}>
-                  <option value="">Select Employee</option>
-                  {metricsMatrix.map(emp => (
-                    <option key={emp.email} value={emp.email}>{emp.name} ({emp.userid})</option>
-                  ))}
-                </select>
-              </div>
-              <div className="fg">
-                <label>Total Number of Cases *</label>
-                <input type="number" value={newTask.caseCount} onChange={(e) => setNewTask({...newTask, caseCount: e.target.value})} required min="1" style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)" }} />
-              </div>
-              <div className="fg">
-                <label>Notes</label>
-                <textarea value={newTask.notes} onChange={(e) => setNewTask({...newTask, notes: e.target.value})} style={{ width: "100%", minHeight: "80px", padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)" }}></textarea>
-              </div>
-              <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Assign Task</button>
-            </form>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
