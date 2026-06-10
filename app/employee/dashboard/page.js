@@ -125,11 +125,11 @@ export default function EmployeeDashboard() {
   const fetchData = async (user) => {
     try {
       const [calls, shops, reps, att, employeeRes] = await Promise.all([
-        supabase.from('calls').select('*').eq('logged_by', user.email),
-        supabase.from('shops').select('*').eq('logged_by', user.email),
-        supabase.from('reports').select('*').eq('logged_by', user.email),
-        supabase.from('attendance').select('*').eq('email', user.email),
-        supabase.from('employees').select('name').eq('email', user.email).single(),
+        supabase.from('calls').select('*').ilike('logged_by', user.email),
+        supabase.from('shops').select('*').ilike('logged_by', user.email),
+        supabase.from('reports').select('*').ilike('logged_by', user.email),
+        supabase.from('attendance').select('*').ilike('email', user.email),
+        supabase.from('employees').select('name').ilike('email', user.email).single(),
       ]);
 
       const mapCalls = calls.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
@@ -1312,7 +1312,7 @@ export default function EmployeeDashboard() {
                   <div className="fg"><label>Product Detail</label><input type="text" name="s_product" placeholder="Dark Chocolate Bars" /></div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-                  <div className="fg"><label>Mobile Contact</label><input type="tel" name="s_phone" placeholder="9876000001" pattern="[0-9]*" onInput={(e) => e.target.value = e.target.value.replace(/[^0-9]/g, '')} /></div>
+                  <div className="fg"><label>Mobile Contact</label><input type="tel" name="s_phone" placeholder="9876000001" pattern="[0-9]{10}" maxLength={10} minLength={10} title="Please enter exactly 10 digits" onInput={(e) => e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10)} /></div>
                   <div className="fg"><label>Location Area</label><input type="text" name="s_addr" placeholder="12 MG Road, Chennai" /></div>
                 </div>
                 <div className="fg">

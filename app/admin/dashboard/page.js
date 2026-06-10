@@ -110,11 +110,11 @@ export default function AdminDashboard() {
         supabase.from('reports').select('*')
       ]);
 
-      const mapCalls = callsRes.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const mapShops = shopsRes.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const mapReps = repsRes.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const mapAtt = attRes.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
-      const empData = empRes.data || [];
+      const mapCalls = callsRes.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by?.toLowerCase(), timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapShops = shopsRes.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by?.toLowerCase(), timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapReps = repsRes.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by?.toLowerCase(), timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const mapAtt = attRes.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, email: d.email?.toLowerCase(), in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const empData = empRes.data?.map(d => ({ ...d, email: d.email?.toLowerCase() })) || [];
 
       setEmployeesSnap(empData);
       setAttSnap(mapAtt.map(d => ({ id: d.id, data: () => d })));
@@ -1593,7 +1593,7 @@ export default function AdminDashboard() {
                 <div className="fg"><label>Email *</label><input type="email" value={newEmp.email} onChange={(e) => setNewEmp({...newEmp, email: e.target.value})} required /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-                <div className="fg"><label>Phone Number *</label><input type="tel" value={newEmp.phone} onChange={(e) => setNewEmp({...newEmp, phone: e.target.value})} required /></div>
+                <div className="fg"><label>Phone Number *</label><input type="tel" value={newEmp.phone} onChange={(e) => setNewEmp({...newEmp, phone: e.target.value.replace(/[^0-9]/g, '').slice(0, 10)})} required pattern="[0-9]{10}" maxLength={10} minLength={10} title="Please enter exactly 10 digits" /></div>
                 <div className="fg"><label>Status</label><select value={newEmp.status} onChange={(e) => setNewEmp({...newEmp, status: e.target.value})}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
