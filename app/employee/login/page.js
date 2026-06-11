@@ -23,7 +23,7 @@ export default function EmployeeLogin() {
       setErrorMsg("Please enter your credentials.");
       return;
     }
-    if (email === "admin@gmail.com") {
+    if (email.toLowerCase() === "pmajagan@gmail.com") {
       setErrorMsg("Admin identities must use the dedicated Admin Portal gateway.");
       return;
     }

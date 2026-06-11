@@ -351,7 +351,7 @@ export default function EmployeeDashboard() {
   let allCallPoints = 0;
   for (const date in allCallsByDate) {
     if (allCallsByDate[date] >= 20) allCallPoints += 5;
-    else if (allCallsByDate[date] >= 16) allCallPoints += 3;
+    else if (allCallsByDate[date] >= 16) allCallPoints += 2;
   }
   const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
   const allShopPoints = Math.floor(shopsSnap.length / 100) * 50;
@@ -563,10 +563,21 @@ export default function EmployeeDashboard() {
       return "Absent";
     };
 
-    const filteredLogs = attSnap.filter(d => {
+    const logsWithDynStatus = attSnap.map(d => {
+      let dynStatus = d.status;
+      if (d.status === "present" && d.in && d.in.seconds) {
+        const inTime = d.in.seconds * 1000;
+        const outTime = d.out ? d.out.seconds * 1000 : Date.now();
+        const hrs = (outTime - inTime) / (1000 * 60 * 60);
+        if (hrs < 4) dynStatus = "partial";
+      }
+      return { ...d, dynStatus };
+    });
+
+    const filteredLogs = logsWithDynStatus.filter(d => {
       if (filterFrom && d.date < filterFrom) return false;
       if (filterTo && d.date > filterTo) return false;
-      if (filterStatus !== "all" && d.status !== filterStatus) return false;
+      if (filterStatus !== "all" && d.dynStatus !== filterStatus) return false;
       return true;
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -623,6 +634,7 @@ export default function EmployeeDashboard() {
               <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }}>
                 <option value="all">All</option>
                 <option value="present">Present</option>
+                <option value="partial">Partial</option>
                 <option value="absent">Absent</option>
               </select>
             </div>
@@ -649,7 +661,7 @@ export default function EmployeeDashboard() {
                         {d.out ? new Date(d.out.seconds * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                       </td>
                       <td>
-                        <span className={`bdg ${d.status === "present" ? "b-ok" : "b-am"}`}>{d.status}</span>
+                        <span className={`bdg ${d.dynStatus === "present" ? "b-ok" : d.dynStatus === "partial" ? "b-am" : "b-no"}`}>{d.dynStatus}</span>
                       </td>
                     </tr>
                   ))
@@ -703,7 +715,7 @@ export default function EmployeeDashboard() {
 
     let callPoints = 0;
     if (callsTodayCount >= 20) callPoints = 5;
-    else if (callsTodayCount >= 16) callPoints = 3;
+    else if (callsTodayCount >= 16) callPoints = 2;
 
     return (
       <>
@@ -718,7 +730,7 @@ export default function EmployeeDashboard() {
             <div className="ki"><IconStar /></div>
             <div className="kl">Productive Points</div>
             <div className="kv">{callPoints}</div>
-            <div className="ks">16=3, 20=5 pts</div>
+            <div className="ks">16=2, 20=5 pts</div>
           </div>
         </div>
 
@@ -997,7 +1009,6 @@ export default function EmployeeDashboard() {
               <input type="date" value={repFilterTo} onChange={(e) => setRepFilterTo(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
               <select value={repFilterType} onChange={(e) => setRepFilterType(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }}>
                 <option value="all">All Types</option>
-                <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
               </select>
             </div>
@@ -1329,7 +1340,7 @@ export default function EmployeeDashboard() {
                   <div>File Weekly Operations Summary Report</div>
                   <button type="button" onClick={() => { setModalType(null); setReportAgencies([{ name: "", cgs: "" }]); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
                 </div>
-                <div className="fg"><label>Report Title Context *</label><input type="text" name="r_title" placeholder="Weekly Report — May 28" required /></div>
+                <div className="fg"><label>Report Title Context *</label><input type="text" name="r_title" required /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
                   <div className="fg"><label>From Date *</label><input type="date" name="r_from_date" required /></div>
                   <div className="fg"><label>To Date *</label><input type="date" name="r_to_date" required /></div>

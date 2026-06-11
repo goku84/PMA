@@ -17,7 +17,7 @@ export default function AdminLogin() {
     e.preventDefault();
     setErrorMsg("");
     setSuccessMsg("");
-    if (email !== "admin@gmail.com") {
+    if (email.toLowerCase() !== "pmajagan@gmail.com") {
       setErrorMsg("Access Denied: Standard staff accounts must use the Employee Gateway.");
       return;
     }

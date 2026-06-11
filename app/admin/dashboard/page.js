@@ -79,7 +79,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session || session.user.email !== "admin@gmail.com") {
+      if (!session || session.user.email !== "pmajagan@gmail.com") {
         router.push("/admin/login");
       } else {
         fetchData();
@@ -88,7 +88,7 @@ export default function AdminDashboard() {
     fetchSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session || session.user.email !== "admin@gmail.com") {
+      if (!session || session.user.email !== "pmajagan@gmail.com") {
         router.push("/admin/login");
       } else {
         fetchData();
@@ -125,7 +125,7 @@ export default function AdminDashboard() {
       const metricsMap = {};
 
       empData.forEach((data) => {
-        if (data.role === "admin" || data.email === "admin@gmail.com") return;
+        if (data.role === "admin" || data.email === "pmajagan@gmail.com") return;
 
         metricsMap[data.email] = {
           id: data.id,
@@ -173,7 +173,7 @@ export default function AdminDashboard() {
         const dailyCounts = callsByEmailAndDate[email] || {};
         for (const date in dailyCounts) {
           if (dailyCounts[date] >= 20) pts += 5;
-          else if (dailyCounts[date] >= 16) pts += 3;
+          else if (dailyCounts[date] >= 16) pts += 2;
         }
         metricsMap[email].callPts = pts;
       });
@@ -377,7 +377,7 @@ export default function AdminDashboard() {
 
     const dMetricsMap = {};
     employeesSnap.forEach((data) => {
-      if (data.role === "admin" || data.email === "admin@gmail.com") return;
+      if (data.role === "admin" || data.email === "pmajagan@gmail.com") return;
       dMetricsMap[data.email] = {
         name: data.name || data.email.split("@")[0],
         email: data.email,
@@ -398,7 +398,7 @@ export default function AdminDashboard() {
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.loggedBy !== "admin@gmail.com" && isWithinRange(d.timestamp)) {
+        if (d.loggedBy !== "pmajagan@gmail.com" && isWithinRange(d.timestamp)) {
           totalCalls++;
           if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartCalls++;
           
@@ -419,7 +419,7 @@ export default function AdminDashboard() {
       const dailyCounts = callsByEmailAndDate[email] || {};
       for (const date in dailyCounts) {
         if (dailyCounts[date] >= 20) pts += 5;
-        else if (dailyCounts[date] >= 16) pts += 3;
+        else if (dailyCounts[date] >= 16) pts += 2;
       }
       dMetricsMap[email].callPts = pts;
     });
@@ -492,7 +492,7 @@ export default function AdminDashboard() {
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.loggedBy !== "admin@gmail.com" && d.timestamp && isWithinRange(d.timestamp)) {
+        if (d.loggedBy !== "pmajagan@gmail.com" && d.timestamp && isWithinRange(d.timestamp)) {
           recentActivities.push({ type: 'call', text: `New call to ${d.phoneNumber}`, subtext: `By ${d.loggedBy}`, time: d.timestamp.seconds, icon: <IconPhoneCall size={20}/>, colorClass: styles.dark });
         }
       });
@@ -774,7 +774,7 @@ export default function AdminDashboard() {
     if (attSnap) {
       attSnap.forEach(doc => {
         const d = doc.data();
-        if (d.email !== "admin@gmail.com") {
+        if (d.email !== "pmajagan@gmail.com") {
           let include = true;
           let dateStr = "";
           if (d.timestamp && d.timestamp.seconds) {
@@ -815,7 +815,6 @@ export default function AdminDashboard() {
       <>
         <div className="kg">
           <div className="kc ok"><div className="ki"><IconClockCheck /></div><div className="kl">Logged Presences</div><div className="kv">{uniqueEmails}</div><div className="ks">Unique employees in range</div></div>
-          <div className="kc gd"><div className="ki"><IconClockCheck /></div><div className="kl">Attendance Rate</div><div className="kv">{attRate}%</div><div className="ks">Of total registered</div></div>
           <div className="kc"><div className="ki"><IconClockCheck /></div><div className="kl">Active Shifts</div><div className="kv" style={{ fontSize: "18px" }}>{openShifts} Open</div><div className="ks">Not yet checked out</div></div>
         </div>
         <div className="card">
@@ -875,7 +874,7 @@ export default function AdminDashboard() {
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.loggedBy !== "admin@gmail.com") {
+        if (d.loggedBy !== "pmajagan@gmail.com") {
           let include = true;
           let dateStr = "";
           if (d.timestamp && d.timestamp.seconds) {
@@ -995,14 +994,24 @@ export default function AdminDashboard() {
 
   const handleRejectShop = async (id) => {
     try {
-      await supabase.from('shops').update({ status: "rejected" }).eq('id', id);
+      const { error } = await supabase.from('shops').update({ status: "rejected" }).eq('id', id);
+      if (error) {
+        alert("Error rejecting: " + error.message);
+        return;
+      }
       fetchData();
+      alert("Shop Rejected!");
     } catch (e) { console.error(e); }
   };
   const handleVerifyShop = async (id) => {
     try {
-      await supabase.from('shops').update({ status: "verified" }).eq('id', id);
+      const { error } = await supabase.from('shops').update({ status: "verified" }).eq('id', id);
+      if (error) {
+        alert("Error verifying: " + error.message);
+        return;
+      }
       fetchData();
+      alert("Shop Verified!");
     } catch (e) {
       console.error(e);
     }
@@ -1128,6 +1137,8 @@ export default function AdminDashboard() {
                             <td>
                               {d.status === 'verified' ? (
                                 <span className="bdg b-ok">Verified</span>
+                              ) : d.status === 'rejected' ? (
+                                <span className="bdg b-no">Rejected</span>
                               ) : (
                                 <div style={{ display: "flex", gap: "4px" }}>
                                   <button className="btn btn-ok" style={{ padding: "4px 8px", fontSize: "12px" }} onClick={() => handleVerifyShop(d.id)}>Verify</button>
@@ -1354,7 +1365,7 @@ export default function AdminDashboard() {
 
     const dMetricsMap = {};
     employeesSnap.forEach((data) => {
-      if (data.role === "admin" || data.email === "admin@gmail.com") return;
+      if (data.role === "admin" || data.email === "pmajagan@gmail.com") return;
       dMetricsMap[data.email] = {
         name: data.name || data.email.split("@")[0],
         email: data.email,
@@ -1373,7 +1384,7 @@ export default function AdminDashboard() {
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
-        if (d.loggedBy !== "admin@gmail.com" && isWithinRange(d.timestamp)) {
+        if (d.loggedBy !== "pmajagan@gmail.com" && isWithinRange(d.timestamp)) {
           if (d.loggedBy && dMetricsMap[d.loggedBy]) {
              dMetricsMap[d.loggedBy].callCount++;
              if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
@@ -1391,7 +1402,7 @@ export default function AdminDashboard() {
       const dailyCounts = callsByEmailAndDate[email] || {};
       for (const date in dailyCounts) {
         if (dailyCounts[date] >= 20) pts += 5;
-        else if (dailyCounts[date] >= 16) pts += 3;
+        else if (dailyCounts[date] >= 16) pts += 2;
       }
       dMetricsMap[email].callPts = pts;
     });
