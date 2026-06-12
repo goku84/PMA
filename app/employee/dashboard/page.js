@@ -53,13 +53,13 @@ const extractReportData = (rep) => {
       if (!to_date) to_date = periodMatch[2];
     }
     if (!cb_count) {
-       const cbsMatches = [...rep.content.matchAll(/-\s*(\d+)\s*CBs/gi)];
-       if (cbsMatches.length > 0) {
-           cb_count = cbsMatches.reduce((sum, match) => sum + parseInt(match[1]), 0);
-       } else {
-           const cbMatch = rep.content.match(/(\d+)\s*CBs/i);
-           if (cbMatch) cb_count = parseInt(cbMatch[1]);
-       }
+      const cbsMatches = [...rep.content.matchAll(/-\s*(\d+)\s*CBs/gi)];
+      if (cbsMatches.length > 0) {
+        cb_count = cbsMatches.reduce((sum, match) => sum + parseInt(match[1]), 0);
+      } else {
+        const cbMatch = rep.content.match(/(\d+)\s*CBs/i);
+        if (cbMatch) cb_count = parseInt(cbMatch[1]);
+      }
     }
   }
   return { from_date, to_date, cb_count };
@@ -126,7 +126,7 @@ export default function EmployeeDashboard() {
       });
     }
     const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
-    
+
     let points = 0;
     if (percent >= 100) points = 100;
     else if (percent >= 90) points = 75;
@@ -298,13 +298,20 @@ export default function EmployeeDashboard() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const beat = fd.get("beat_name");
+    const agencyName = fd.get("agency_name");
     const totalSales = fd.get("total_sales");
     const numCalls = parseInt(fd.get("num_calls"), 10);
     const notes = fd.get("notes") || "—";
 
+    if (!agencyName || !agencyName.trim()) {
+      alert("Agency Name is required.");
+      return;
+    }
+
     try {
       const insertData = {
         customer_name: beat,
+        agency_name: agencyName,
         phone_number: totalSales || "—",
         status: "Pending Verification",
         duration_minutes: numCalls,
@@ -401,7 +408,9 @@ export default function EmployeeDashboard() {
   const allAttPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
   let totalCallCount = 0;
   callsSnap.forEach(c => {
-    totalCallCount += (c.durationMinutes || 0);
+    if (c.status === "Verified") {
+      totalCallCount += (c.durationMinutes || 0);
+    }
   });
   let allCallPoints = 0;
   if (totalCallCount >= 20) allCallPoints = 5;
@@ -868,7 +877,10 @@ export default function EmployeeDashboard() {
                           const itemPoints = c.status === "Verified" ? (c.durationMinutes >= 20 ? 5 : c.durationMinutes >= 16 ? 2 : 0) : 0;
                           return (
                             <tr key={`${i}-${j}`} style={{ background: "var(--sur)" }}>
-                              <td style={{ paddingLeft: "20px" }}>📍 {c.customerName || "—"}</td>
+                              <td style={{ paddingLeft: "20px" }}>
+                                <div>📍 <b>Beat:</b> {c.customerName || "—"}</div>
+                                <div style={{ fontSize: "12px", color: "var(--tx2)", marginTop: "4px", marginLeft: "22px" }}>🏢 <b>Agency:</b> {c.agency_name || "—"}</div>
+                              </td>
                               <td style={{ fontFamily: "var(--font-dm-mono)" }}>{c.durationMinutes || 0}</td>
                               <td style={{ fontWeight: 600 }}>{c.phoneNumber || "—"}</td>
                               <td style={{ color: "var(--tx2)", fontSize: "13px" }}>{c.notes || "—"}</td>
@@ -1149,7 +1161,7 @@ export default function EmployeeDashboard() {
 
   const renderTargets = () => {
     const sortedTasks = [...tasksSnap].sort((a, b) => new Date(b.from_date) - new Date(a.from_date));
-    
+
     const currentTarget = sortedTasks.find(task => {
       const { status } = getTaskProgress(task);
       return status === "Active";
@@ -1217,7 +1229,7 @@ export default function EmployeeDashboard() {
                 }}></div>
               </div>
             </div>
-            
+
             {currentTarget.notes && (
               <div style={{ marginTop: "20px", padding: "12px 16px", background: "rgba(0,0,0,0.02)", borderRadius: "8px", borderLeft: "3px solid var(--ind)", fontSize: "13px", color: "var(--tx2)" }}>
                 <strong>Manager's Note:</strong> {currentTarget.notes}
@@ -1468,7 +1480,7 @@ export default function EmployeeDashboard() {
               <img src="/logo.jpeg" alt="PCA Logo" style={{ width: "40px", height: "auto", mixBlendMode: "multiply", clipPath: "inset(2%)" }} />
             </div>
             <div>
-              <div className="bname">Prabha Food Industries</div>
+              <div className="bname">Praba Food Industries</div>
               <div className="btag">Employee Portal</div>
             </div>
           </div>
@@ -1548,6 +1560,10 @@ export default function EmployeeDashboard() {
                 <div className="mh">
                   <div>Log Productive Call (Beat)</div>
                   <button type="button" onClick={() => setModalType(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
+                </div>
+                <div className="fg">
+                  <label>Agency Name *</label>
+                  <input type="text" name="agency_name" placeholder="e.g. ABC Agency" required />
                 </div>
                 <div className="fg">
                   <label>Beat (Area) *</label>

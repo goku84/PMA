@@ -37,6 +37,7 @@ CREATE TABLE calls (
   duration_minutes INTEGER,
   notes TEXT,
   logged_by TEXT, -- Email
+  agency_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

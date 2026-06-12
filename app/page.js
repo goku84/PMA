@@ -41,7 +41,7 @@ export default function Home() {
             <img src="/logo.jpeg" alt="PCA Logo" style={{ width: "64px", height: "auto", mixBlendMode: "multiply", clipPath: "inset(3%)" }} />
           </div>
           <div className={styles.brandText} style={{ display: 'flex', flexDirection: 'column' }}>
-            <h1 className={styles.brandName} style={{ color: '#d4af37', margin: 0, fontSize: '28px', lineHeight: 1 }}>Prabha</h1>
+            <h1 className={styles.brandName} style={{ color: '#2E3192', margin: 0, fontSize: '28px', lineHeight: 1 }}>Praba</h1>
             <p className={styles.brandSlogan} style={{ margin: 0, marginTop: '2px', fontSize: '13px', color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Food Industries</p>
           </div>
         </div>
