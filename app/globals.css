@@ -131,6 +131,11 @@ a {
   color: var(--no);
 }
 
+.btn-am {
+  background: var(--warn-lt);
+  color: var(--warn);
+}
+
 .fg {
   margin-bottom: 14px;
   text-align: left;

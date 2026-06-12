@@ -132,7 +132,8 @@ export default function EmployeeDashboard() {
         supabase.from('employees').select('name').ilike('email', user.email).single(),
       ]);
 
-      const mapCalls = calls.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
+      const allCalls = calls.data || [];
+      const mapCalls = allCalls.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapShops = shops.data?.map(d => ({ ...d, shopName: d.shop_name, productDetail: d.product_detail, imageUrl: d.image_url, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapReps = reps.data?.map(d => ({ ...d, totalSalesAmount: d.total_sales_amount, loggedBy: d.logged_by, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
       const mapAtt = att.data?.map(d => ({ ...d, employeeName: d.employee_name, inPhotoUrl: d.in_photo_url, outPhotoUrl: d.out_photo_url, in: d.in_time ? { seconds: new Date(d.in_time).getTime() / 1000 } : null, out: d.out_time ? { seconds: new Date(d.out_time).getTime() / 1000 } : null, timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
@@ -172,7 +173,7 @@ export default function EmployeeDashboard() {
         status: "present",
         points: 0,
       });
-      
+
       if (error) throw error;
       alert("Checked in successfully!");
       fetchData(activeUser);
@@ -209,13 +210,13 @@ export default function EmployeeDashboard() {
       const { data, error: uploadError } = await supabase.storage
         .from('images')
         .upload(fileName, file);
-        
+
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
         .from('images')
         .getPublicUrl(fileName);
-        
+
       const photoUrl = publicUrl;
 
       const realToday = new Date();
@@ -241,24 +242,25 @@ export default function EmployeeDashboard() {
     const fd = new FormData(e.target);
     const beat = fd.get("beat_name");
     const totalSales = fd.get("total_sales");
+    const numCalls = parseInt(fd.get("num_calls"), 10);
+    const notes = fd.get("notes") || "—";
 
     try {
-      const insertData = productiveShops.map(shop => ({
+      const insertData = {
         customer_name: beat,
-        phone_number: shop.location || "—",
-        status: shop.name || "—",
-        duration_minutes: 5,
-        notes: `Total Sales: ${totalSales}`,
+        phone_number: totalSales || "—",
+        status: "Pending Verification",
+        duration_minutes: numCalls,
+        notes: notes,
         logged_by: activeUser.email,
         created_at: new Date().toISOString(),
-      }));
+      };
 
       const { error } = await supabase.from("calls").insert(insertData);
-      
+
       if (error) throw error;
       alert("Productive Call logged successfully!");
       setModalType(null);
-      setProductiveShops([{ name: "", location: "" }]);
       fetchData(activeUser);
     } catch (err) {
       alert(err.message);
@@ -305,14 +307,14 @@ export default function EmployeeDashboard() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const rType = fd.get("r_type");
-    
+
     const fromDate = fd.get("r_from_date");
     const toDate = fd.get("r_to_date");
     const note = fd.get("r_note");
 
     let formattedContent = `Period: ${fromDate} to ${toDate}\n\nAgencies Visited:\n`;
     reportAgencies.forEach((agency, index) => {
-      formattedContent += `${index + 1}. ${agency.name} - ${agency.cgs} CGs\n`;
+      formattedContent += `${index + 1}. ${agency.name} - ${agency.cgs} CBs\n`;
     });
     if (note) {
       formattedContent += `\nNote:\n${note}`;
@@ -340,19 +342,13 @@ export default function EmployeeDashboard() {
 
   // Points Calculation for Dashboard (All Time)
   const allAttPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
-  const allCallsByDate = {};
+  let totalCallCount = 0;
   callsSnap.forEach(c => {
-    if (!c.timestamp || !c.timestamp.seconds) return;
-    const dt = new Date(c.timestamp.seconds * 1000);
-    dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-    const dateStr = dt.toISOString().split("T")[0];
-    allCallsByDate[dateStr] = (allCallsByDate[dateStr] || 0) + 1;
+    totalCallCount += (c.durationMinutes || 0);
   });
   let allCallPoints = 0;
-  for (const date in allCallsByDate) {
-    if (allCallsByDate[date] >= 20) allCallPoints += 5;
-    else if (allCallsByDate[date] >= 16) allCallPoints += 2;
-  }
+  if (totalCallCount >= 20) allCallPoints = 5;
+  else if (totalCallCount >= 16) allCallPoints = 2;
   const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
   const allShopPoints = Math.floor(shopsSnap.length / 100) * 50;
   const totalPoints = allAttPoints + allCallPoints + allRepPoints + allShopPoints;
@@ -363,11 +359,16 @@ export default function EmployeeDashboard() {
   const todayStr = realToday.toISOString().split("T")[0];
   let callsTodayCount = 0;
   callsSnap.forEach(c => {
-    if (c.timestamp && c.timestamp.seconds) {
+    if (
+      c.status === "Verified" &&
+      c.timestamp &&
+      c.timestamp.seconds
+    ) {
       const dt = new Date(c.timestamp.seconds * 1000);
       dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+
       if (dt.toISOString().split("T")[0] === todayStr) {
-        callsTodayCount++;
+        callsTodayCount += (c.durationMinutes || 0);
       }
     }
   });
@@ -714,8 +715,24 @@ export default function EmployeeDashboard() {
     const paginatedDates = dateKeys.slice((callPage - 1) * itemsPerPage, callPage * itemsPerPage);
 
     let callPoints = 0;
-    if (callsTodayCount >= 20) callPoints = 5;
-    else if (callsTodayCount >= 16) callPoints = 2;
+    let totalVerifiedToday = 0;
+
+    callsSnap.forEach(c => {
+      if (
+        c.status === "Verified" &&
+        c.timestamp &&
+        c.timestamp.seconds
+      ) {
+        const dt = new Date(c.timestamp.seconds * 1000);
+        dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+
+        if (dt.toISOString().split("T")[0] === todayStr) {
+          totalVerifiedToday += (c.durationMinutes || 0);
+        }
+      }
+    });
+    if (totalVerifiedToday >= 20) callPoints = 5;
+    else if (totalVerifiedToday >= 16) callPoints = 2;
 
     return (
       <>
@@ -728,7 +745,7 @@ export default function EmployeeDashboard() {
           </div>
           <div className="kc">
             <div className="ki"><IconStar /></div>
-            <div className="kl">Productive Points</div>
+            <div className="kl">Productive Points (Today)</div>
             <div className="kv">{callPoints}</div>
             <div className="ks">16=2, 20=5 pts</div>
           </div>
@@ -747,56 +764,51 @@ export default function EmployeeDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Beat (Area)</th>
-                  <th>Shop Location</th>
-                  <th>Shop Name</th>
+                  <th>Beat (Area) / Date</th>
+                  <th>Number of Calls</th>
                   <th>Total Sales</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Points</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedDates.length > 0 ? (
                   paginatedDates.map((dStr, i) => {
                     const callsInDate = groupedCalls[dStr];
-                    // Group by beat
-                    const groupedByBeat = {};
-                    callsInDate.forEach(c => {
-                      const beat = c.customerName || "Unknown Beat";
-                      if (!groupedByBeat[beat]) groupedByBeat[beat] = [];
-                      groupedByBeat[beat].push(c);
-                    });
                     const isExpanded = expandedDates[dStr];
                     return (
                       <Fragment key={i}>
                         <tr onClick={() => setExpandedDates(prev => ({ ...prev, [dStr]: !prev[dStr] }))} style={{ cursor: "pointer", background: "var(--sur2)" }}>
                           <td><b>{dStr}</b></td>
-                          <td colSpan="3"><b>{callsInDate.length} Productive Calls Logged</b></td>
+                          <td colSpan="4"><b>{callsInDate.length} Beat Report(s) Logged</b></td>
                           <td style={{ textAlign: "right" }}>{isExpanded ? "▲" : "▼"}</td>
                         </tr>
-                        {isExpanded && Object.keys(groupedByBeat).map((beat, bIdx) => (
-                          <Fragment key={`${i}-beat-${bIdx}`}>
-                            <tr style={{ background: "var(--sur)" }}>
-                              <td style={{ paddingLeft: "30px", fontSize: "13px", color: "var(--tx2)" }}>—</td>
-                              <td colSpan="3" style={{ color: "var(--ind)", fontWeight: 600 }}>📍 Beat: {beat}</td>
-                              <td style={{ fontWeight: 600, color: "var(--tx)" }}>{groupedByBeat[beat][0]?.notes || "—"}</td>
+                        {isExpanded && callsInDate.map((c, j) => {
+                          const itemPoints = c.status === "Verified" ? (c.durationMinutes >= 20 ? 5 : c.durationMinutes >= 16 ? 2 : 0) : 0;
+                          return (
+                            <tr key={`${i}-${j}`} style={{ background: "var(--sur)" }}>
+                              <td style={{ paddingLeft: "20px" }}>📍 {c.customerName || "—"}</td>
+                              <td style={{ fontFamily: "var(--font-dm-mono)" }}>{c.durationMinutes || 0}</td>
+                              <td style={{ fontWeight: 600 }}>{c.phoneNumber || "—"}</td>
+                              <td style={{ color: "var(--tx2)", fontSize: "13px" }}>{c.notes || "—"}</td>
+                              <td>
+                                <span className={`bdg ${c.status === "Verified" ? "b-ok" : c.status === "Rejected" ? "b-no" : "b-am"}`}>
+                                  {c.status || "Pending Verification"}
+                                </span>
+                              </td>
+                              <td style={{ fontWeight: 600, color: itemPoints > 0 ? "var(--ok)" : "var(--tx3)" }}>
+                                {itemPoints > 0 ? `+${itemPoints} pts` : "—"}
+                              </td>
                             </tr>
-                            {groupedByBeat[beat].map((d, j) => (
-                              <tr key={`${i}-beat-${bIdx}-${j}`} style={{ background: "var(--sur)" }}>
-                                <td></td>
-                                <td style={{ color: "var(--tx3)", fontSize: "12px", paddingLeft: "20px" }}>↳ Shop</td>
-                                <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.phoneNumber}</td>
-                                <td><span className="bdg b-ok">{d.status}</span></td>
-                                <td style={{ color: "var(--tx3)" }}>—</td>
-                              </tr>
-                            ))}
-                          </Fragment>
-                        ))}
+                          );
+                        })}
                       </Fragment>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>
+                    <td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>
                       No productive call records found matching criteria.
                     </td>
                   </tr>
@@ -921,10 +933,10 @@ export default function EmployeeDashboard() {
       return tB - tA;
     });
 
-    const approvedCount = repsSnap.filter(r => r.status === "approved").length;
+    const approvedCount = repsSnap.filter(r => r.status === "approved" || r.status === "approved_no_points").length;
     const rejectedCount = repsSnap.filter(r => r.status === "rejected").length;
     const pendingCount = repsSnap.length - approvedCount - rejectedCount;
-    const weeklyCount = repsSnap.filter(r => r.type === "weekly").length;
+    const weeklyCount = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length;
     const reportPoints = weeklyCount * 15;
 
     return (
@@ -939,7 +951,7 @@ export default function EmployeeDashboard() {
             .reports-stats-grid > .kc {
               grid-column: span 2;
               padding: 12px 8px !important;
-              min-width: 0; /* allows text truncation if needed */
+              min-width: 0;
             }
             .reports-stats-grid > .kc:nth-child(4),
             .reports-stats-grid > .kc:nth-child(5) {
@@ -1028,7 +1040,9 @@ export default function EmployeeDashboard() {
                         {dStr && <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{dStr}</span>}
                         <span className={`bdg ${d.type === 'weekly' ? 'b-ok' : 'b-am'}`}>{d.type}</span>
                         {d.status === 'approved' ? (
-                          <span className="bdg b-ok">Approved</span>
+                          <span className="bdg b-ok">Approved +15 Points</span>
+                        ) : d.status === 'approved_no_points' ? (
+                          <span className="bdg b-am">Approved (No Points)</span>
                         ) : d.status === 'rejected' ? (
                           <span className="bdg b-no">Rejected</span>
                         ) : (
@@ -1052,8 +1066,6 @@ export default function EmployeeDashboard() {
       </>
     );
   };
-
-
 
   const renderPoints = () => {
     const isWithinPointFilter = (timestamp) => {
@@ -1082,22 +1094,19 @@ export default function EmployeeDashboard() {
       } else if (pointFilterPeriod === "custom") {
         return (!pointFilterFrom || dateStr >= pointFilterFrom) && (!pointFilterTo || dateStr <= pointFilterTo);
       }
-      return true; // all
+      return true;
     };
 
     const filteredAttPoints = attSnap.filter(a => isWithinPointFilter(a.timestamp)).reduce((acc, curr) => acc + (curr.points || 0), 0);
-    const filteredCallsByDate = {};
-    callsSnap.filter(c => isWithinPointFilter(c.timestamp)).forEach(c => {
-      const dt = new Date(c.timestamp.seconds * 1000);
-      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-      const dateStr = dt.toISOString().split("T")[0];
-      filteredCallsByDate[dateStr] = (filteredCallsByDate[dateStr] || 0) + 1;
-    });
+    let filteredVerifiedCalls = 0;
+    callsSnap
+      .filter(c => c.status === "Verified" && isWithinPointFilter(c.timestamp))
+      .forEach(c => {
+        filteredVerifiedCalls += (c.durationMinutes || 0);
+      });
     let filteredCallPoints = 0;
-    for (const date in filteredCallsByDate) {
-      if (filteredCallsByDate[date] >= 20) filteredCallPoints += 5;
-      else if (filteredCallsByDate[date] >= 16) filteredCallPoints += 3;
-    }
+    if (filteredVerifiedCalls >= 20) filteredCallPoints = 5;
+    else if (filteredVerifiedCalls >= 16) filteredCallPoints = 2;
     const filteredRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved" && isWithinPointFilter(r.timestamp)).length * 15;
     let filteredMonthlyShopsCount = 0;
     shopsSnap.filter(s => isWithinPointFilter(s.timestamp)).forEach(() => {
@@ -1149,7 +1158,7 @@ export default function EmployeeDashboard() {
                 </div>
                 <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredCallPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
               </div>
-              
+
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconFileReport size={18} /></div>
@@ -1157,7 +1166,7 @@ export default function EmployeeDashboard() {
                 </div>
                 <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredRepPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
               </div>
-              
+
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconBuildingStore size={18} /></div>
@@ -1277,36 +1286,23 @@ export default function EmployeeDashboard() {
               <form onSubmit={submitCallForm}>
                 <div className="mh">
                   <div>Log Productive Call (Beat)</div>
-                  <button type="button" onClick={() => { setModalType(null); setProductiveShops([{ name: "", location: "" }]); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
+                  <button type="button" onClick={() => setModalType(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--tx)", padding: 0 }}><IconX size={20} /></button>
                 </div>
                 <div className="fg">
                   <label>Beat (Area) *</label>
                   <input type="text" name="beat_name" placeholder="e.g. Chennai Inner Area" required />
                 </div>
-                <div style={{ margin: "16px 0", borderTop: "1px solid var(--bdr)", borderBottom: "1px solid var(--bdr)", padding: "16px 0", maxHeight: "300px", overflowY: "auto" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                    <label style={{ margin: 0 }}>Productive Shops Visited</label>
-                    <button type="button" className="btn" style={{ padding: "4px 10px", fontSize: "12px", background: "var(--sur2)", color: "var(--tx)" }} onClick={() => setProductiveShops([...productiveShops, { name: "", location: "" }])}>
-                      + Add Shop
-                    </button>
-                  </div>
-                  {productiveShops.map((shop, i) => (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "10px", marginBottom: "10px", alignItems: "end" }}>
-                      <div className="fg" style={{ margin: 0 }}>
-                        <input type="text" placeholder="Shop Name" value={shop.name} onChange={(e) => { const newS = [...productiveShops]; newS[i].name = e.target.value; setProductiveShops(newS); }} required />
-                      </div>
-                      <div className="fg" style={{ margin: 0 }}>
-                        <input type="text" placeholder="Shop Location" value={shop.location} onChange={(e) => { const newS = [...productiveShops]; newS[i].location = e.target.value; setProductiveShops(newS); }} required />
-                      </div>
-                      <button type="button" className="btn" style={{ background: "var(--no)", color: "#fff", padding: "10px", height: "42px" }} onClick={() => { if (productiveShops.length > 1) { const newS = [...productiveShops]; newS.splice(i, 1); setProductiveShops(newS); } }}>
-                        <IconX size={16} />
-                      </button>
-                    </div>
-                  ))}
+                <div className="fg">
+                  <label>Number of Productive Calls *</label>
+                  <input type="number" name="num_calls" placeholder="e.g. 18" required min="0" />
                 </div>
                 <div className="fg">
                   <label>Total Sales Value *</label>
                   <input type="number" name="total_sales" placeholder="e.g. 5000" required min="0" />
+                </div>
+                <div className="fg">
+                  <label>Notes (Optional)</label>
+                  <textarea name="notes" placeholder="Any additional comments..." style={{ width: "100%", height: "80px", padding: "10px", borderRadius: "8px", border: "1.5px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", outline: "none", resize: "none", fontSize: "14px" }}></textarea>
                 </div>
                 <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Submit Productive Call</button>
               </form>
@@ -1359,15 +1355,18 @@ export default function EmployeeDashboard() {
                         <input type="text" placeholder="Agency Name" value={agency.name} onChange={(e) => { const newA = [...reportAgencies]; newA[i].name = e.target.value; setReportAgencies(newA); }} required />
                       </div>
                       <div className="fg" style={{ margin: 0 }}>
-                        <input type="number" placeholder="No of CGs" value={agency.cgs} onChange={(e) => { const newA = [...reportAgencies]; newA[i].cgs = e.target.value; setReportAgencies(newA); }} required min="0" />
+                        <input type="number" placeholder="No of CBs" value={agency.cgs} onChange={(e) => { const newA = [...reportAgencies]; newA[i].cgs = e.target.value; setReportAgencies(newA); }} required min="0" />
                       </div>
                       <button type="button" className="btn" style={{ background: "var(--no)", color: "#fff", padding: "10px", height: "42px" }} onClick={() => { if (reportAgencies.length > 1) { const newA = [...reportAgencies]; newA.splice(i, 1); setReportAgencies(newA); } }}>
                         <IconX size={16} />
                       </button>
                     </div>
                   ))}
+                  <div className="fg"><label>Note</label><textarea name="r_note" placeholder="Any additional notes..." style={{ width: "100%", minHeight: "80px", borderRadius: "8px", padding: "10px", border: "1.5px solid var(--bdr)" }}></textarea></div>
                 </div>
-                <div className="fg"><label>Note</label><textarea name="r_note" placeholder="Any additional notes..." style={{ width: "100%", minHeight: "80px", borderRadius: "8px", padding: "10px", border: "1.5px solid var(--bdr)" }}></textarea></div>
+                <div style={{ fontSize: "13px", color: "var(--am)", margin: "10px 0", fontWeight: 500, lineHeight: "1.4" }}>
+                  ⚠ Weekly reports must be submitted before Monday 8:00 AM. Reports submitted after the deadline may be approved without points.
+                </div>
                 <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Transmit Report Log</button>
               </form>
             )}

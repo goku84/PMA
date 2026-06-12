@@ -155,26 +155,19 @@ export default function AdminDashboard() {
         }
       });
 
-      const callsByEmailAndDate = {};
       mapCalls.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy]) {
-          metricsMap[d.loggedBy].callCount++;
-          if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
-          if (d.timestamp && d.timestamp.seconds) {
-            const dt = new Date(d.timestamp.seconds * 1000);
-            dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-            const dateStr = dt.toISOString().split("T")[0];
-            callsByEmailAndDate[d.loggedBy][dateStr] = (callsByEmailAndDate[d.loggedBy][dateStr] || 0) + 1;
+          if (d.status === "Verified") {
+            const numCalls = d.durationMinutes || 0;
+            metricsMap[d.loggedBy].callCount += numCalls;
           }
         }
       });
       Object.keys(metricsMap).forEach((email) => {
         let pts = 0;
-        const dailyCounts = callsByEmailAndDate[email] || {};
-        for (const date in dailyCounts) {
-          if (dailyCounts[date] >= 20) pts += 5;
-          else if (dailyCounts[date] >= 16) pts += 2;
-        }
+        const totalVerified = metricsMap[email].callCount;
+        if (totalVerified >= 20) pts = 5;
+        else if (totalVerified >= 16) pts = 2;
         metricsMap[email].callPts = pts;
       });
 
@@ -219,9 +212,11 @@ export default function AdminDashboard() {
 
       mapReps.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy]) {
-          metricsMap[d.loggedBy].reportCount++;
-          if (d.status === "approved") {
-            if (d.type === "weekly") metricsMap[d.loggedBy].reportPts += 15;
+          if (d.status === "approved" || d.status === "approved_no_points") {
+            metricsMap[d.loggedBy].reportCount++;
+            if (d.status === "approved" && d.type === "weekly") {
+              metricsMap[d.loggedBy].reportPts += 15;
+            }
           }
         }
       });
@@ -394,33 +389,26 @@ export default function AdminDashboard() {
 
     let totalCalls = 0;
     let chartCalls = 0;
-    const callsByEmailAndDate = {};
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
         if (d.loggedBy !== "pmajagan@gmail.com" && isWithinRange(d.timestamp)) {
-          totalCalls++;
-          if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartCalls++;
-          
-          if (d.loggedBy && dMetricsMap[d.loggedBy]) {
-             dMetricsMap[d.loggedBy].callCount++;
-             if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
-             const dt = new Date(d.timestamp.seconds * 1000);
-             dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-             const dStr = dt.toISOString().split("T")[0];
-             callsByEmailAndDate[d.loggedBy][dStr] = (callsByEmailAndDate[d.loggedBy][dStr] || 0) + 1;
+          if (d.status === "Verified") {
+            const numCalls = d.durationMinutes || 0;
+            totalCalls += numCalls;
+            if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartCalls += numCalls;
+            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+              dMetricsMap[d.loggedBy].callCount += numCalls;
+            }
           }
         }
       });
     }
-
     Object.keys(dMetricsMap).forEach((email) => {
       let pts = 0;
-      const dailyCounts = callsByEmailAndDate[email] || {};
-      for (const date in dailyCounts) {
-        if (dailyCounts[date] >= 20) pts += 5;
-        else if (dailyCounts[date] >= 16) pts += 2;
-      }
+      const totalVerified = dMetricsMap[email].callCount;
+      if (totalVerified >= 20) pts = 5;
+      else if (totalVerified >= 16) pts = 2;
       dMetricsMap[email].callPts = pts;
     });
 
@@ -454,12 +442,12 @@ export default function AdminDashboard() {
         const d = doc.data();
         if (isWithinRange(d.timestamp)) {
           totalReports++;
-          if (d.status === 'approved') {
+          if (d.status === 'approved' || d.status === 'approved_no_points') {
             approvedReports++;
             if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartReports++;
             if (d.loggedBy && dMetricsMap[d.loggedBy]) {
               dMetricsMap[d.loggedBy].reportCount++;
-              if (d.type === "weekly") dMetricsMap[d.loggedBy].reportPts += 15;
+              if (d.status === 'approved' && d.type === "weekly") dMetricsMap[d.loggedBy].reportPts += 15;
             }
           }
         }
@@ -869,11 +857,44 @@ export default function AdminDashboard() {
     );
   };
 
+  const handleVerifyCall = async (id) => {
+    try {
+      const { error } = await supabase.from('calls').update({ status: "Verified" }).eq('id', id);
+      if (error) {
+        alert("Error verifying call: " + error.message);
+        return;
+      }
+      fetchData();
+      alert("Productive Call Verified!");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectCall = async (id) => {
+    try {
+      const { error } = await supabase.from('calls').update({ status: "Rejected" }).eq('id', id);
+      if (error) {
+        alert("Error rejecting call: " + error.message);
+        return;
+      }
+      fetchData();
+      alert("Productive Call Rejected!");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const renderCalls = () => {
     let filteredCallList = [];
+    let pendingCount = 0;
+    let verifiedCount = 0;
+    let rejectedCount = 0;
+
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
+        d.id = doc.id;
         if (d.loggedBy !== "pmajagan@gmail.com") {
           let include = true;
           let dateStr = "";
@@ -883,7 +904,7 @@ export default function AdminDashboard() {
             dateStr = dt.toISOString().split("T")[0];
           }
 
-          const empName = metricsMatrix.find(e => e.email === d.loggedBy)?.name || "Unknown";
+          const empName = employeesSnap.find(e => e.email?.toLowerCase() === d.loggedBy?.toLowerCase())?.name || d.loggedBy;
           d.empName = empName;
           d.dateStr = dateStr;
 
@@ -893,6 +914,9 @@ export default function AdminDashboard() {
           
           if (include) {
             filteredCallList.push(d);
+            if (d.status === "Verified") verifiedCount++;
+            else if (d.status === "Rejected") rejectedCount++;
+            else pendingCount++;
           }
         }
       });
@@ -904,29 +928,34 @@ export default function AdminDashboard() {
        return tB - tA;
     });
 
-    const callsByEmp = {};
-    let totalDur = 0;
-    filteredCallList.forEach(c => {
-      const eName = c.empName;
-      if (!callsByEmp[eName]) callsByEmp[eName] = [];
-      callsByEmp[eName].push(c);
-    });
-
-    const uniqueEmps = Object.keys(callsByEmp).length;
-
-    const toggleEmp = (eName) => {
-      setExpandedEmp(prev => ({ ...prev, [eName]: !prev[eName] }));
-    };
+    const uniqueEmails = new Set(filteredCallList.map(d => d.loggedBy)).size;
 
     return (
       <>
         <div className="kg">
-          <div className="kc gd"><div className="ki"><IconPhoneCall /></div><div className="kl">Total Productive Calls</div><div className="kv">{filteredCallList.length}</div><div className="ks">In selected range</div></div>
-          <div className="kc ok"><div className="ki"><IconUsers /></div><div className="kl">Unique Agents</div><div className="kv" style={{ fontSize: "28px" }}>{uniqueEmps}</div><div className="ks">Employees who logged beats</div></div>
+          <div className="kc gd">
+            <div className="ki"><IconPhoneCall /></div>
+            <div className="kl">Verified Calls (Beat Count)</div>
+            <div className="kv">{verifiedCount}</div>
+            <div className="ks">Approved by Admin</div>
+          </div>
+          <div className="kc b-am">
+            <div className="ki"><IconClock /></div>
+            <div className="kl">Pending Verification</div>
+            <div className="kv">{pendingCount}</div>
+            <div className="ks">Awaiting Action</div>
+          </div>
+          <div className="kc ok">
+            <div className="ki"><IconUsers /></div>
+            <div className="kl">Active Agents</div>
+            <div className="kv" style={{ fontSize: "28px" }}>{uniqueEmails}</div>
+            <div className="ks">Logging in selected range</div>
+          </div>
         </div>
+
         <div className="card">
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px" }}>
-            <span>Cross-Department Real-Time Productive Calls Pipeline</span>
+            <span>Productive Calls Verification Queue</span>
             <div className="filter-row">
               <input type="text" placeholder="Search Name or Email" value={callFilterSearch} onChange={(e) => setCallFilterSearch(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
               <input type="date" value={callFilterFrom} onChange={(e) => setCallFilterFrom(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
@@ -935,54 +964,53 @@ export default function AdminDashboard() {
           </div>
           <div className="tw">
             <table>
-              <thead><tr><th>Date</th><th>Employee Email</th><th>Beat (Area)</th><th>Shop Name</th><th>Shop Location</th><th>Total Sales</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee Name</th>
+                  <th>Beat Name</th>
+                  <th>Number of Calls</th>
+                  <th>Total Sales</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
               <tbody>
-                {Object.keys(callsByEmp).length > 0 ? (
-                  Object.keys(callsByEmp).map((eName, i) => (
-                    <React.Fragment key={i}>
-                      <tr onClick={() => toggleEmp(eName)} style={{ cursor: "pointer", background: "var(--sur2)" }}>
-                        <td><b>{eName}</b></td>
-                        <td colSpan="4"><b>{callsByEmp[eName].length} Productive Calls Logged</b></td>
-                        <td style={{ textAlign: "right" }}>{expandedEmp[eName] ? "▼" : "▲"}</td>
+                {filteredCallList.length > 0 ? (
+                  filteredCallList.map((d, i) => {
+                    let dStr = "—";
+                    if (d.timestamp && d.timestamp.seconds) {
+                      dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                    }
+                    return (
+                      <tr key={d.id || i} style={{ opacity: d.status === 'Rejected' ? 0.6 : 1 }}>
+                        <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
+                        <td>{d.empName}</td>
+                        <td style={{ fontWeight: 600 }}>{d.customerName || "—"}</td>
+                        <td style={{ fontFamily: "var(--font-dm-mono)", fontWeight: 600 }}>{d.durationMinutes || 0}</td>
+                        <td style={{ fontWeight: 600 }}>{d.phoneNumber || "—"}</td>
+                        <td style={{ color: "var(--tx2)", fontSize: "13px" }}>{d.notes || "—"}</td>
+                        <td>
+                          <span className={`bdg ${d.status === 'Verified' ? 'b-ok' : d.status === 'Rejected' ? 'b-no' : 'b-am'}`}>
+                            {d.status || 'Pending Verification'}
+                          </span>
+                        </td>
+                        <td>
+                          {(!d.status || d.status === 'Pending Verification') ? (
+                            <div style={{ display: "flex", gap: "4px" }}>
+                              <button className="btn btn-ok" style={{ padding: "4px 8px", fontSize: "12px" }} onClick={() => handleVerifyCall(d.id)}>Verify</button>
+                              <button className="btn btn-no" style={{ padding: "4px 8px", fontSize: "12px" }} onClick={() => handleRejectCall(d.id)}>Reject</button>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: "12px", color: "var(--tx3)" }}>—</span>
+                          )}
+                        </td>
                       </tr>
-                      {expandedEmp[eName] && (() => {
-                        const groupedByBeat = {};
-                        callsByEmp[eName].forEach(c => {
-                          const beat = c.customerName || "Unknown Beat";
-                          if (!groupedByBeat[beat]) groupedByBeat[beat] = [];
-                          groupedByBeat[beat].push(c);
-                        });
-
-                        return Object.keys(groupedByBeat).map((beat, bIdx) => (
-                          <React.Fragment key={`${eName}-beat-${bIdx}`}>
-                            <tr style={{ background: "var(--sur)" }}>
-                              <td style={{ paddingLeft: "30px", fontSize: "13px", color: "var(--tx2)" }}>—</td>
-                              <td colSpan="4" style={{ color: "var(--ind)", fontWeight: 600 }}>📍 Beat: {beat}</td>
-                              <td style={{ fontWeight: 600, color: "var(--tx)" }}>{groupedByBeat[beat][0]?.notes || "—"}</td>
-                            </tr>
-                            {groupedByBeat[beat].map((d, j) => {
-                              let dStr = "—";
-                              if (d.timestamp && d.timestamp.seconds) {
-                                dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
-                              }
-                              return (
-                                <tr key={`${eName}-beat-${bIdx}-${j}`} style={{ background: "transparent" }}>
-                                  <td style={{ fontSize: "13px", color: "var(--tx2)", paddingLeft: "30px" }}>{dStr}</td>
-                                  <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.loggedBy}</td>
-                                  <td style={{ color: "var(--tx3)", fontSize: "12px", paddingLeft: "20px" }}>↳ Shop</td>
-                                  <td><span className="bdg b-ok">{d.status}</span></td>
-                                  <td style={{ fontFamily: "var(--font-dm-mono)" }}>{d.phoneNumber}</td>
-                                  <td style={{ color: "var(--tx3)" }}>—</td>
-                                </tr>
-                              );
-                            })}
-                          </React.Fragment>
-                        ));
-                      })()}
-                    </React.Fragment>
-                  ))
+                    );
+                  })
                 ) : (
-                  <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>No productive calls available.</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: "center", color: "var(--tx3)" }}>No productive calls available.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1162,7 +1190,7 @@ export default function AdminDashboard() {
     );
   };
 
-  const handleApproveReport = async (id) => {
+  const handleApproveReportWithPoints = async (id) => {
     try {
       const { error } = await supabase.from('reports').update({ status: "approved" }).eq('id', id);
       if (error) {
@@ -1170,7 +1198,20 @@ export default function AdminDashboard() {
         console.error(error);
         return;
       }
-      alert("Report Approved!");
+      alert("Report Approved with Points!");
+      fetchData();
+    } catch (e) { alert("Error: " + e.message); console.error(e); }
+  };
+
+  const handleApproveReportWithoutPoints = async (id) => {
+    try {
+      const { error } = await supabase.from('reports').update({ status: "approved_no_points" }).eq('id', id);
+      if (error) {
+        alert("Error approving: " + error.message);
+        console.error(error);
+        return;
+      }
+      alert("Report Approved (No Points)!");
       fetchData();
     } catch (e) { alert("Error: " + e.message); console.error(e); }
   };
@@ -1215,7 +1256,7 @@ export default function AdminDashboard() {
         
         if (include) {
           filteredRepsList.push(d);
-          if (d.status === "approved") approvedCount++;
+          if (d.status === "approved" || d.status === "approved_no_points") approvedCount++;
           else if (d.status !== "rejected") pendingCount++;
         }
       });
@@ -1269,9 +1310,9 @@ export default function AdminDashboard() {
                   <span><b>{eName}</b></span>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <span style={{ fontSize: "14px", color: "var(--tx2)" }}>{repsByEmp[eName].length} Reports Logged</span>
-                    {repsByEmp[eName].filter(r => r.status !== 'approved' && r.status !== 'rejected').length > 0 && (
+                    {repsByEmp[eName].filter(r => r.status !== 'approved' && r.status !== 'approved_no_points' && r.status !== 'rejected').length > 0 && (
                       <span style={{ background: "#d32f2f", color: "#fff", padding: "4px 10px", borderRadius: "12px", fontSize: "13px", fontWeight: "bold" }}>
-                        {repsByEmp[eName].filter(r => r.status !== 'approved' && r.status !== 'rejected').length} Pending Audit
+                        {repsByEmp[eName].filter(r => r.status !== 'approved' && r.status !== 'approved_no_points' && r.status !== 'rejected').length} Pending Audit
                       </span>
                     )}
                     <span style={{ fontSize: "14px", color: "var(--tx2)", marginLeft: "4px" }}>{expandedRepEmp[eName] ? "▼" : "▲"}</span>
@@ -1287,7 +1328,9 @@ export default function AdminDashboard() {
                             <span style={{ fontSize: "12px", color: "var(--tx3)", marginTop: "4px", fontWeight: "normal" }}>By {d.empName} • {d.dateStr}</span>
                           </div>
                           {d.status === 'approved' ? (
-                            <span className="bdg b-ok">Approved</span>
+                            <span className="bdg b-ok">Approved +15 Points</span>
+                          ) : d.status === 'approved_no_points' ? (
+                            <span className="bdg b-am">Approved (No Points)</span>
                           ) : d.status === 'rejected' ? (
                             <span className="bdg b-no">Rejected</span>
                           ) : (
@@ -1298,7 +1341,8 @@ export default function AdminDashboard() {
                         
                         {(!d.status || d.status === 'pending') && (
                           <div style={{ display: "flex", gap: "8px" }}>
-                            <button className="btn btn-ok" onClick={() => handleApproveReport(d.id)}>Approve Summary</button>
+                            <button className="btn btn-ok" onClick={() => handleApproveReportWithPoints(d.id)}>Approve + Points</button>
+                            <button className="btn btn-am" onClick={() => handleApproveReportWithoutPoints(d.id)}>Approve Without Points</button>
                             <button className="btn btn-no" onClick={() => handleRejectReport(d.id)}>Reject</button>
                           </div>
                         )}
@@ -1380,30 +1424,24 @@ export default function AdminDashboard() {
       };
     });
 
-    const callsByEmailAndDate = {};
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
         if (d.loggedBy !== "pmajagan@gmail.com" && isWithinRange(d.timestamp)) {
-          if (d.loggedBy && dMetricsMap[d.loggedBy]) {
-             dMetricsMap[d.loggedBy].callCount++;
-             if (!callsByEmailAndDate[d.loggedBy]) callsByEmailAndDate[d.loggedBy] = {};
-             const dt = new Date(d.timestamp.seconds * 1000);
-             dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-             const dStr = dt.toISOString().split("T")[0];
-             callsByEmailAndDate[d.loggedBy][dStr] = (callsByEmailAndDate[d.loggedBy][dStr] || 0) + 1;
+          if (d.status === "Verified") {
+            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
+              const numCalls = d.durationMinutes || 0;
+              dMetricsMap[d.loggedBy].callCount += numCalls;
+            }
           }
         }
       });
     }
-
     Object.keys(dMetricsMap).forEach((email) => {
       let pts = 0;
-      const dailyCounts = callsByEmailAndDate[email] || {};
-      for (const date in dailyCounts) {
-        if (dailyCounts[date] >= 20) pts += 5;
-        else if (dailyCounts[date] >= 16) pts += 2;
-      }
+      const totalVerified = dMetricsMap[email].callCount;
+      if (totalVerified >= 20) pts = 5;
+      else if (totalVerified >= 16) pts = 2;
       dMetricsMap[email].callPts = pts;
     });
 
@@ -1427,10 +1465,10 @@ export default function AdminDashboard() {
       repsSnap.forEach(doc => {
         const d = doc.data();
         if (isWithinRange(d.timestamp)) {
-          if (d.status === 'approved') {
+          if (d.status === 'approved' || d.status === 'approved_no_points') {
             if (d.loggedBy && dMetricsMap[d.loggedBy]) {
               dMetricsMap[d.loggedBy].reportCount++;
-              if (d.type === "weekly") dMetricsMap[d.loggedBy].reportPts += 15;
+              if (d.status === 'approved' && d.type === "weekly") dMetricsMap[d.loggedBy].reportPts += 15;
             }
           }
         }
