@@ -38,6 +38,7 @@ export default function AdminDashboard() {
   const [shopsSnap, setShopsSnap] = useState(null);
   const [repsSnap, setRepsSnap] = useState(null);
   const [attSnap, setAttSnap] = useState(null);
+  const [tasksSnap, setTasksSnap] = useState(null);
 
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -71,6 +72,15 @@ export default function AdminDashboard() {
   const [dashFilterType, setDashFilterType] = useState("all");
   const [dashFilterFrom, setDashFilterFrom] = useState(getLocalToday());
   const [dashFilterTo, setDashFilterTo] = useState(getLocalToday());
+  
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({
+    employee_email: "",
+    notes: "",
+    from_date: getLocalToday(),
+    to_date: getLocalToday(),
+    cgs_count: ""
+  });
 
   const [leaderFilterType, setLeaderFilterType] = useState("all");
   const [leaderFilterFrom, setLeaderFilterFrom] = useState(getLocalToday());
@@ -102,12 +112,13 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [empRes, attRes, callsRes, shopsRes, repsRes] = await Promise.all([
+      const [empRes, attRes, callsRes, shopsRes, repsRes, tasksRes] = await Promise.all([
         supabase.from('employees').select('*'),
         supabase.from('attendance').select('*'),
         supabase.from('calls').select('*'),
         supabase.from('shops').select('*'),
-        supabase.from('reports').select('*')
+        supabase.from('reports').select('*'),
+        supabase.from('tasks').select('*')
       ]);
 
       const mapCalls = callsRes.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by?.toLowerCase(), timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];
@@ -121,6 +132,7 @@ export default function AdminDashboard() {
       setCallsSnap(mapCalls.map(d => ({ id: d.id, data: () => d })));
       setShopsSnap(mapShops.map(d => ({ id: d.id, data: () => d })));
       setRepsSnap(mapReps.map(d => ({ id: d.id, data: () => d })));
+      setTasksSnap(tasksRes.data || []);
 
       const metricsMap = {};
 
@@ -297,6 +309,27 @@ export default function AdminDashboard() {
       } catch (err) {
         alert("Error deleting employee: " + err.message);
       }
+    }
+  };
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    try {
+      const { error } = await supabase.from('tasks').insert([{
+        employee_email: newTask.employee_email,
+        notes: newTask.notes,
+        from_date: newTask.from_date,
+        to_date: newTask.to_date,
+        cgs_count: parseInt(newTask.cgs_count) || 0,
+        status: 'pending'
+      }]);
+      if (error) throw error;
+      alert("Task assigned successfully!");
+      setShowAddTask(false);
+      setNewTask({ employee_email: "", notes: "", from_date: getLocalToday(), to_date: getLocalToday(), cgs_count: "" });
+      fetchData();
+    } catch (err) {
+      alert("Error saving task: " + err.message);
     }
   };
 
@@ -1481,6 +1514,50 @@ export default function AdminDashboard() {
     }).sort((a, b) => b.totalPoints - a.totalPoints);
   };
 
+  const renderTasks = () => {
+    return (
+      <>
+        <div className="card">
+          <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px" }}>
+            <span>Task Assignment Database</span>
+            <button className="btn btn-ok" onClick={() => setShowAddTask(true)}>+ Add Assignment Task</button>
+          </div>
+          <div className="tw">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date Assigned</th>
+                  <th>Employee Email</th>
+                  <th>From Date</th>
+                  <th>To Date</th>
+                  <th>CGS Count</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasksSnap && tasksSnap.length > 0 ? tasksSnap.map((task, i) => {
+                  const dStr = new Date(task.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                  return (
+                    <tr key={i}>
+                      <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
+                      <td><b>{task.employee_email}</b></td>
+                      <td>{task.from_date}</td>
+                      <td>{task.to_date}</td>
+                      <td style={{ fontWeight: 600 }}>{task.cgs_count}</td>
+                      <td style={{ color: "var(--tx2)" }}>{task.notes}</td>
+                      <td><span className={`bdg ${task.status === 'completed' ? 'b-ok' : 'b-am'}`}>{task.status}</span></td>
+                    </tr>
+                  )
+                }) : <tr><td colSpan="7" style={{ textAlign: "center", color: "var(--tx3)" }}>No tasks assigned.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>
+    );
+  };
+
 
 
   const renderLeaderboard = () => {
@@ -1586,6 +1663,7 @@ export default function AdminDashboard() {
           <button className={`ni ${activeTab === 'calls' ? 'on' : ''}`} onClick={() => { setActiveTab('calls'); setIsMobileMenuOpen(false); }}><IconPhoneCall size={18} />Productive Calls</button>
           <button className={`ni ${activeTab === 'shops' ? 'on' : ''}`} onClick={() => { setActiveTab('shops'); setIsMobileMenuOpen(false); }}><IconBuildingStore size={18} />Shop Verify</button>
           <button className={`ni ${activeTab === 'reports' ? 'on' : ''}`} onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); }}><IconFileReport size={18} />Reports</button>
+          <button className={`ni ${activeTab === 'tasks' ? 'on' : ''}`} onClick={() => { setActiveTab('tasks'); setIsMobileMenuOpen(false); }}><IconListCheck size={18} />Task Assignment</button>
           <div className="snl">Performance</div>
           <button className={`ni ${activeTab === 'leaderboard' ? 'on' : ''}`} onClick={() => { setActiveTab('leaderboard'); setIsMobileMenuOpen(false); }}><IconTrophy size={18} />Leaderboard</button>
         </div>
@@ -1625,6 +1703,7 @@ export default function AdminDashboard() {
           {activeTab === "calls" && renderCalls()}
           {activeTab === "shops" && renderShops()}
           {activeTab === "reports" && renderReports()}
+          {activeTab === "tasks" && renderTasks()}
           {activeTab === "leaderboard" && renderLeaderboard()}
         </main>
       </div>
@@ -1655,6 +1734,40 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {showAddTask && (
+        <div className="mo" style={{ display: "flex" }}>
+          <div className="md">
+            <form onSubmit={handleAddTask}>
+              <div className="mh">
+                <div>Assign Task Target</div>
+                <button type="button" onClick={() => setShowAddTask(false)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--tx2)" }}><IconX size={20} /></button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
+                <div className="fg">
+                  <label>Employee *</label>
+                  <select value={newTask.employee_email} onChange={(e) => setNewTask({...newTask, employee_email: e.target.value})} style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%", outline: "none" }} required>
+                    <option value="">Select Employee</option>
+                    {employeesSnap.filter(e => e.role !== 'admin' && e.email !== 'pmajagan@gmail.com').map((emp, i) => (
+                      <option key={i} value={emp.email}>{emp.name || emp.email.split('@')[0]} ({emp.userid || 'No ID'})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
+                <div className="fg"><label>From Date *</label><input type="date" value={newTask.from_date} onChange={(e) => setNewTask({...newTask, from_date: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
+                <div className="fg"><label>To Date *</label><input type="date" value={newTask.to_date} onChange={(e) => setNewTask({...newTask, to_date: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
+                <div className="fg"><label>CGS Count *</label><input type="number" value={newTask.cgs_count} onChange={(e) => setNewTask({...newTask, cgs_count: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
+                <div className="fg"><label>Notes</label><textarea value={newTask.notes} onChange={(e) => setNewTask({...newTask, notes: e.target.value})} rows="4" style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", resize: "vertical", fontFamily: "inherit" }}></textarea></div>
+              </div>
+              <button type="submit" style={{ width: "100%", marginTop: "10px", padding: "12px", background: "#2e2a6b", color: "white", border: "none", borderRadius: "8px", fontWeight: "bold", cursor: "pointer", fontSize: "14px" }}>Assign Task</button>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
