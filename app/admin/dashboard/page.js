@@ -156,6 +156,7 @@ export default function AdminDashboard() {
           shopPts: 0,
           reportCount: 0,
           reportPts: 0,
+          targetPts: 0,
           totalPoints: 0,
         };
       });
@@ -233,11 +234,31 @@ export default function AdminDashboard() {
         }
       });
 
+      const todayStr = getLocalToday();
+      (tasksRes.data || []).forEach(task => {
+        if (metricsMap[task.employee_email]) {
+           let achievedCBs = 0;
+           mapReps.forEach(rep => {
+             if (rep.loggedBy === task.employee_email && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
+               if (rep.from_date && rep.to_date && rep.from_date >= task.from_date && rep.to_date <= task.to_date) {
+                 achievedCBs += parseInt(rep.cb_count || 0);
+               }
+             }
+           });
+           const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+           let pts = 0;
+           if (percent >= 100) pts = 100;
+           else if (percent >= 90) pts = 75;
+           metricsMap[task.employee_email].targetPts += pts;
+        }
+      });
+
       const finalLeaderboard = Object.values(metricsMap).map((emp) => {
         emp.totalPoints =
           emp.callPts +
           emp.shopPts +
-          emp.reportPts;
+          emp.reportPts +
+          emp.targetPts;
         return emp;
       });
 
@@ -315,6 +336,18 @@ export default function AdminDashboard() {
   const handleAddTask = async (e) => {
     e.preventDefault();
     try {
+      const hasOverlap = tasksSnap.some(task => {
+        if (task.employee_email === newTask.employee_email) {
+          return task.from_date <= newTask.to_date && task.to_date >= newTask.from_date;
+        }
+        return false;
+      });
+
+      if (hasOverlap) {
+        alert("This employee already has an overlapping target in that date range.");
+        return;
+      }
+
       const { error } = await supabase.from('tasks').insert([{
         employee_email: newTask.employee_email,
         notes: newTask.notes,
@@ -1453,6 +1486,7 @@ export default function AdminDashboard() {
         shopPts: 0,
         reportCount: 0,
         reportPts: 0,
+        targetPts: 0,
         totalPoints: 0,
       };
     });
@@ -1508,8 +1542,31 @@ export default function AdminDashboard() {
       });
     }
 
+    if (tasksSnap) {
+      tasksSnap.forEach(task => {
+        if (dMetricsMap[task.employee_email]) {
+           let achievedCBs = 0;
+           if (repsSnap) {
+             repsSnap.forEach(doc => {
+               const rep = doc.data();
+               if (rep.loggedBy === task.employee_email && isWithinRange(rep.timestamp) && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
+                 if (rep.from_date && rep.to_date && rep.from_date >= task.from_date && rep.to_date <= task.to_date) {
+                   achievedCBs += parseInt(rep.cb_count || 0);
+                 }
+               }
+             });
+           }
+           const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+           let pts = 0;
+           if (percent >= 100) pts = 100;
+           else if (percent >= 90) pts = 75;
+           dMetricsMap[task.employee_email].targetPts += pts;
+        }
+      });
+    }
+
     return Object.values(dMetricsMap).map((emp) => {
-      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts;
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + emp.targetPts;
       return emp;
     }).sort((a, b) => b.totalPoints - a.totalPoints);
   };
@@ -1528,9 +1585,9 @@ export default function AdminDashboard() {
                 <tr>
                   <th>Date Assigned</th>
                   <th>Employee Email</th>
-                  <th>From Date</th>
-                  <th>To Date</th>
-                  <th>CGS Count</th>
+                  <th>Period</th>
+                  <th>Target CBs</th>
+                  <th>Progress</th>
                   <th>Notes</th>
                   <th>Status</th>
                 </tr>
@@ -1538,15 +1595,52 @@ export default function AdminDashboard() {
               <tbody>
                 {tasksSnap && tasksSnap.length > 0 ? tasksSnap.map((task, i) => {
                   const dStr = new Date(task.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                  
+                  // Compute progress
+                  let achievedCBs = 0;
+                  let unreviewedReports = 0;
+                  if (repsSnap) {
+                    repsSnap.forEach(doc => {
+                      const rep = doc.data();
+                      if (rep.loggedBy === task.employee_email && rep.from_date && rep.to_date && rep.from_date >= task.from_date && rep.to_date <= task.to_date) {
+                        if (rep.status === 'approved' || rep.status === 'approved_no_points') {
+                          achievedCBs += parseInt(rep.cb_count || 0);
+                        } else if (rep.status !== 'rejected') {
+                          unreviewedReports++;
+                        }
+                      }
+                    });
+                  }
+                  
+                  const percent = task.cgs_count > 0 ? Math.min(100, Math.floor((achievedCBs / task.cgs_count) * 100)) : 0;
+                  
+                  // Compute Status
+                  const todayStr = getLocalToday();
+                  let computedStatus = "Active";
+                  if (todayStr > task.to_date) {
+                    computedStatus = unreviewedReports > 0 ? "Pending Settlement" : "Closed";
+                  }
+
+                  let statusBdg = "b-ok";
+                  if (computedStatus === "Pending Settlement") statusBdg = "b-am";
+                  else if (computedStatus === "Closed") statusBdg = "b-no";
+
                   return (
                     <tr key={i}>
                       <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
                       <td><b>{task.employee_email}</b></td>
-                      <td>{task.from_date}</td>
-                      <td>{task.to_date}</td>
+                      <td style={{ fontSize: "13px" }}>{task.from_date} to {task.to_date}</td>
                       <td style={{ fontWeight: 600 }}>{task.cgs_count}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div style={{ width: "60px", background: "var(--bdr)", height: "6px", borderRadius: "4px", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${percent}%`, background: "var(--ind)", transition: "width 0.3s" }}></div>
+                          </div>
+                          <span style={{ fontSize: "12px", fontWeight: "bold" }}>{achievedCBs} ({percent}%)</span>
+                        </div>
+                      </td>
                       <td style={{ color: "var(--tx2)" }}>{task.notes}</td>
-                      <td><span className={`bdg ${task.status === 'completed' ? 'b-ok' : 'b-am'}`}>{task.status}</span></td>
+                      <td><span className={`bdg ${statusBdg}`}>{computedStatus}</span></td>
                     </tr>
                   )
                 }) : <tr><td colSpan="7" style={{ textAlign: "center", color: "var(--tx3)" }}>No tasks assigned.</td></tr>}
@@ -1617,7 +1711,7 @@ export default function AdminDashboard() {
                   <div className="lav">{emp.init}</div>
                   <div style={{ flex: 1, textAlign: "left" }}>
                     <div style={{ fontWeight: 700, fontSize: "14px" }}>{emp.name}</div>
-                    <div style={{ fontSize: "12px", color: "var(--tx3)" }}>Calls Logged: {emp.callCount} · Shops Tracked: {emp.shopCount}</div>
+                    <div style={{ fontSize: "12px", color: "var(--tx3)" }}>Calls: {emp.callCount} · Shops: {emp.shopCount} · Targets: {emp.targetPts} pts</div>
                   </div>
                   <div>
                     <div className="lpt">{emp.totalPoints}</div>

@@ -60,7 +60,12 @@ CREATE TABLE reports (
   type TEXT,
   total_sales_amount NUMERIC DEFAULT 0,
   content TEXT,
+  from_date DATE,
+  to_date DATE,
+  agency_name TEXT,
+  cb_count INTEGER DEFAULT 0,
   logged_by TEXT, -- Email
+  status TEXT DEFAULT 'pending',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -68,10 +73,12 @@ CREATE TABLE reports (
 CREATE TABLE tasks (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   employee_email TEXT,
-  case_count INTEGER,
-  deadline DATE,
+  cgs_count INTEGER,
+  from_date DATE,
+  to_date DATE,
   notes TEXT,
   status TEXT DEFAULT 'pending',
+  awarded_points INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
