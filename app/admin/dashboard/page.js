@@ -81,6 +81,9 @@ export default function AdminDashboard() {
     to_date: getLocalToday(),
     cgs_count: ""
   });
+  const [empSearchQuery, setEmpSearchQuery] = useState("");
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [taskFilterSearch, setTaskFilterSearch] = useState("");
 
   const [leaderFilterType, setLeaderFilterType] = useState("all");
   const [leaderFilterFrom, setLeaderFilterFrom] = useState(getLocalToday());
@@ -105,8 +108,16 @@ export default function AdminDashboard() {
       }
     });
 
+    const handleDocumentClick = (e) => {
+      if (!e.target.closest('.fg')) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("click", handleDocumentClick);
+
     return () => {
       subscription?.unsubscribe();
+      document.removeEventListener("click", handleDocumentClick);
     };
   }, [router]);
 
@@ -360,6 +371,10 @@ export default function AdminDashboard() {
 
   const handleAddTask = async (e) => {
     e.preventDefault();
+    if (!newTask.employee_email) {
+      alert("Please select a valid employee from the searchable list.");
+      return;
+    }
     try {
       const hasOverlap = tasksSnap.some(task => {
         if (task.employee_email === newTask.employee_email) {
@@ -385,6 +400,7 @@ export default function AdminDashboard() {
       alert("Task assigned successfully!");
       setShowAddTask(false);
       setNewTask({ employee_email: "", notes: "", from_date: getLocalToday(), to_date: getLocalToday(), cgs_count: "" });
+      setEmpSearchQuery("");
       fetchData();
     } catch (err) {
       alert("Error saving task: " + err.message);
@@ -1598,19 +1614,45 @@ export default function AdminDashboard() {
   };
 
   const renderTasks = () => {
+    const filteredTasks = (tasksSnap || []).filter(task => {
+      if (!taskFilterSearch) return true;
+      const emp = employeesSnap.find(e => e.email?.toLowerCase() === task.employee_email?.toLowerCase());
+      const empName = emp ? (emp.name || "") : "";
+      const empId = emp ? (emp.userid || "") : "";
+      const query = taskFilterSearch.toLowerCase();
+      return (
+        empName.toLowerCase().includes(query) ||
+        empId.toLowerCase().includes(query) ||
+        task.employee_email.toLowerCase().includes(query)
+      );
+    });
+
     return (
       <>
         <div className="card">
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px" }}>
             <span>Task Assignment Database</span>
-            <button className="btn btn-ok" onClick={() => setShowAddTask(true)}>+ Add Assignment Task</button>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                placeholder="Search Employee Name / ID"
+                value={taskFilterSearch}
+                onChange={(e) => setTaskFilterSearch(e.target.value)}
+                style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "220px", outline: "none" }}
+              />
+              <button className="btn btn-ok" onClick={() => {
+                setShowAddTask(true);
+                setEmpSearchQuery("");
+                setIsDropdownOpen(false);
+              }}>+ Add Assignment Task</button>
+            </div>
           </div>
           <div className="tw">
             <table>
               <thead>
                 <tr>
                   <th>Date Assigned</th>
-                  <th>Employee Email</th>
+                  <th>Employee Name</th>
                   <th>Period</th>
                   <th>Target CBs</th>
                   <th>Progress</th>
@@ -1619,7 +1661,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {tasksSnap && tasksSnap.length > 0 ? tasksSnap.map((task, i) => {
+                {filteredTasks && filteredTasks.length > 0 ? filteredTasks.map((task, i) => {
                   const dStr = new Date(task.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
                   
                   // Compute progress
@@ -1652,10 +1694,13 @@ export default function AdminDashboard() {
                   if (computedStatus === "Pending Settlement") statusBdg = "b-am";
                   else if (computedStatus === "Closed") statusBdg = "b-no";
 
+                  const emp = employeesSnap.find(e => e.email?.toLowerCase() === task.employee_email?.toLowerCase());
+                  const empName = emp ? (emp.name || task.employee_email.split('@')[0]) : task.employee_email.split('@')[0];
+
                   return (
                     <tr key={i}>
                       <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
-                      <td><b>{task.employee_email}</b></td>
+                      <td><b>{empName}</b></td>
                       <td style={{ fontSize: "13px" }}>{task.from_date} to {task.to_date}</td>
                       <td style={{ fontWeight: 600 }}>{task.cgs_count}</td>
                       <td>
@@ -1857,21 +1902,91 @@ export default function AdminDashboard() {
 
       {showAddTask && (
         <div className="mo" style={{ display: "flex" }}>
-          <div className="md">
+          <div className="md" style={{ overflow: "visible" }}>
             <form onSubmit={handleAddTask}>
               <div className="mh">
                 <div>Assign Task Target</div>
-                <button type="button" onClick={() => setShowAddTask(false)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--tx2)" }}><IconX size={20} /></button>
+                <button type="button" onClick={() => { setShowAddTask(false); setEmpSearchQuery(""); }} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--tx2)" }}><IconX size={20} /></button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
-                <div className="fg">
+                <div className="fg" style={{ position: "relative" }}>
                   <label>Employee *</label>
-                  <select value={newTask.employee_email} onChange={(e) => setNewTask({...newTask, employee_email: e.target.value})} style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%", outline: "none" }} required>
-                    <option value="">Select Employee</option>
-                    {employeesSnap.filter(e => e.role !== 'admin' && e.email !== 'pmajagan@gmail.com').map((emp, i) => (
-                      <option key={i} value={emp.email}>{emp.name || emp.email.split('@')[0]} ({emp.userid || 'No ID'})</option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    placeholder="Search Employee Name / Employee ID"
+                    value={empSearchQuery}
+                    onChange={(e) => {
+                      setEmpSearchQuery(e.target.value);
+                      setIsDropdownOpen(true);
+                      setNewTask({ ...newTask, employee_email: "" });
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    required
+                    style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%", outline: "none" }}
+                  />
+                  {isDropdownOpen && (
+                    <div style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      maxHeight: "180px",
+                      overflowY: "auto",
+                      background: "#fff",
+                      border: "1px solid var(--bdr)",
+                      borderRadius: "8px",
+                      boxShadow: "var(--sh)",
+                      zIndex: 1000,
+                      marginTop: "4px"
+                    }}>
+                      {employeesSnap
+                        .filter(e => e.role !== 'admin' && e.email !== 'pmajagan@gmail.com')
+                        .filter(emp => {
+                          if (!empSearchQuery) return true;
+                          if (empSearchQuery === `${emp.name || emp.email.split('@')[0]} (${emp.userid || 'No ID'})`) return true;
+                          const name = emp.name || "";
+                          const userid = emp.userid || "";
+                          const query = empSearchQuery.toLowerCase();
+                          return name.toLowerCase().includes(query) || userid.toLowerCase().includes(query);
+                        })
+                        .map((emp, i) => {
+                          const displayName = `${emp.name || emp.email.split('@')[0]} (${emp.userid || 'No ID'})`;
+                          return (
+                            <div
+                              key={i}
+                              onClick={() => {
+                                setNewTask({ ...newTask, employee_email: emp.email });
+                                setEmpSearchQuery(displayName);
+                                setIsDropdownOpen(false);
+                              }}
+                              style={{
+                                padding: "10px 14px",
+                                cursor: "pointer",
+                                borderBottom: "1px solid rgba(0,0,0,0.05)",
+                                transition: "background 0.2s"
+                              }}
+                              onMouseEnter={(e) => e.target.style.background = "var(--sur2)"}
+                              onMouseLeave={(e) => e.target.style.background = "transparent"}
+                            >
+                              <div style={{ fontWeight: 600, color: "var(--tx)" }}>{emp.name || emp.email.split('@')[0]}</div>
+                              <div style={{ fontSize: "11px", color: "var(--tx3)" }}>ID: {emp.userid || 'No ID'}</div>
+                            </div>
+                          );
+                        })
+                      }
+                      {employeesSnap
+                        .filter(e => e.role !== 'admin' && e.email !== 'pmajagan@gmail.com')
+                        .filter(emp => {
+                          const name = emp.name || "";
+                          const userid = emp.userid || "";
+                          const query = empSearchQuery.toLowerCase();
+                          return name.toLowerCase().includes(query) || userid.toLowerCase().includes(query);
+                        }).length === 0 && (
+                          <div style={{ padding: "10px 14px", color: "var(--tx3)", textAlign: "center" }}>No employee found</div>
+                        )
+                      }
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
@@ -1879,7 +1994,7 @@ export default function AdminDashboard() {
                 <div className="fg"><label>To Date *</label><input type="date" value={newTask.to_date} onChange={(e) => setNewTask({...newTask, to_date: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
-                <div className="fg"><label>CGS Count *</label><input type="number" value={newTask.cgs_count} onChange={(e) => setNewTask({...newTask, cgs_count: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
+                <div className="fg"><label>CBs Count *</label><input type="number" value={newTask.cgs_count} onChange={(e) => setNewTask({...newTask, cgs_count: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
                 <div className="fg"><label>Notes</label><textarea value={newTask.notes} onChange={(e) => setNewTask({...newTask, notes: e.target.value})} rows="4" style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", resize: "vertical", fontFamily: "inherit" }}></textarea></div>

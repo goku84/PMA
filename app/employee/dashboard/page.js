@@ -41,6 +41,30 @@ const getLocalToday = () => {
   return d.toISOString().split("T")[0];
 };
 
+const extractReportData = (rep) => {
+  let from_date = rep.from_date;
+  let to_date = rep.to_date;
+  let cb_count = parseInt(rep.cb_count) || 0;
+
+  if ((!from_date || !to_date || !cb_count) && rep.content) {
+    const periodMatch = rep.content.match(/Period:\s*(\d{4}-\d{2}-\d{2})\s*to\s*(\d{4}-\d{2}-\d{2})/i);
+    if (periodMatch) {
+      if (!from_date) from_date = periodMatch[1];
+      if (!to_date) to_date = periodMatch[2];
+    }
+    if (!cb_count) {
+       const cbsMatches = [...rep.content.matchAll(/-\s*(\d+)\s*CBs/gi)];
+       if (cbsMatches.length > 0) {
+           cb_count = cbsMatches.reduce((sum, match) => sum + parseInt(match[1]), 0);
+       } else {
+           const cbMatch = rep.content.match(/(\d+)\s*CBs/i);
+           if (cbMatch) cb_count = parseInt(cbMatch[1]);
+       }
+    }
+  }
+  return { from_date, to_date, cb_count };
+};
+
 export default function EmployeeDashboard() {
   const router = useRouter();
   const [activeUser, setActiveUser] = useState(null);
@@ -79,11 +103,42 @@ export default function EmployeeDashboard() {
   const [shopsSnap, setShopsSnap] = useState([]);
   const [repsSnap, setRepsSnap] = useState([]);
   const [attSnap, setAttSnap] = useState([]);
+  const [tasksSnap, setTasksSnap] = useState([]);
 
   const [modalType, setModalType] = useState(null); // 'call', 'shop', 'report'
   const [productiveShops, setProductiveShops] = useState([{ name: "", location: "" }]);
   const [reportAgencies, setReportAgencies] = useState([{ name: "", cgs: "" }]);
   const [actualName, setActualName] = useState("");
+
+  const getTaskProgress = (task) => {
+    let achievedCBs = 0;
+    let unreviewedReports = 0;
+    if (repsSnap) {
+      repsSnap.forEach(rep => {
+        const { from_date, to_date, cb_count } = extractReportData(rep);
+        if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+          if (rep.status === 'approved' || rep.status === 'approved_no_points') {
+            achievedCBs += cb_count;
+          } else if (rep.status !== 'rejected') {
+            unreviewedReports++;
+          }
+        }
+      });
+    }
+    const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+    
+    let points = 0;
+    if (percent >= 100) points = 100;
+    else if (percent >= 90) points = 75;
+
+    const todayStr = getLocalToday();
+    let computedStatus = "Active";
+    if (todayStr > task.to_date) {
+      computedStatus = unreviewedReports > 0 ? "Pending Settlement" : "Closed";
+    }
+
+    return { achievedCBs, unreviewedReports, percent, points, status: computedStatus };
+  };
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -124,12 +179,13 @@ export default function EmployeeDashboard() {
 
   const fetchData = async (user) => {
     try {
-      const [calls, shops, reps, att, employeeRes] = await Promise.all([
+      const [calls, shops, reps, att, employeeRes, tasksRes] = await Promise.all([
         supabase.from('calls').select('*').ilike('logged_by', user.email),
         supabase.from('shops').select('*').ilike('logged_by', user.email),
         supabase.from('reports').select('*').ilike('logged_by', user.email),
         supabase.from('attendance').select('*').ilike('email', user.email),
         supabase.from('employees').select('name').ilike('email', user.email).single(),
+        supabase.from('tasks').select('*').ilike('employee_email', user.email),
       ]);
 
       const allCalls = calls.data || [];
@@ -142,6 +198,7 @@ export default function EmployeeDashboard() {
       setShopsSnap(mapShops);
       setRepsSnap(mapReps);
       setAttSnap(mapAtt);
+      setTasksSnap(tasksRes.data || []);
       if (employeeRes.data && employeeRes.data.name) {
         setActualName(employeeRes.data.name);
       }
@@ -351,7 +408,30 @@ export default function EmployeeDashboard() {
   else if (totalCallCount >= 16) allCallPoints = 2;
   const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
   const allShopPoints = Math.floor(shopsSnap.length / 100) * 50;
-  const totalPoints = allAttPoints + allCallPoints + allRepPoints + allShopPoints;
+
+  let allTargetPoints = 0;
+  if (tasksSnap) {
+    tasksSnap.forEach(task => {
+      let achievedCBs = 0;
+      if (repsSnap) {
+        repsSnap.forEach(rep => {
+          const { from_date, to_date, cb_count } = extractReportData(rep);
+          if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+            if (rep.status === 'approved' || rep.status === 'approved_no_points') {
+              achievedCBs += cb_count;
+            }
+          }
+        });
+      }
+      const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+      let points = 0;
+      if (percent >= 100) points = 100;
+      else if (percent >= 90) points = 75;
+      allTargetPoints += points;
+    });
+  }
+
+  const totalPoints = allAttPoints + allCallPoints + allRepPoints + allShopPoints + allTargetPoints;
 
   // Calls Today Calculation for Dashboard
   const realToday = new Date();
@@ -1067,12 +1147,174 @@ export default function EmployeeDashboard() {
     );
   };
 
+  const renderTargets = () => {
+    const sortedTasks = [...tasksSnap].sort((a, b) => new Date(b.from_date) - new Date(a.from_date));
+    
+    const currentTarget = sortedTasks.find(task => {
+      const { status } = getTaskProgress(task);
+      return status === "Active";
+    }) || sortedTasks[0];
+
+    const currentProgress = currentTarget ? getTaskProgress(currentTarget) : null;
+    const remainingCBs = currentTarget && currentProgress ? Math.max(0, currentTarget.cgs_count - currentProgress.achievedCBs) : 0;
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        {currentTarget && currentProgress ? (
+          <div className="card" style={{ padding: "28px", border: "1px solid var(--bdr)", background: "var(--sur)", position: "relative" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px", marginBottom: "20px" }}>
+              <div>
+                <span className="bdg b-ok" style={{ textTransform: "uppercase", fontSize: "11px", tracking: "0.05em", marginBottom: "6px" }}>Current Target Period</span>
+                <h2 style={{ fontSize: "20px", fontWeight: 800, color: "var(--tx)", margin: 0 }}>
+                  {new Date(currentTarget.from_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} &rarr; {new Date(currentTarget.to_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </h2>
+              </div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <span className={`bdg ${currentProgress.status === "Active" ? "b-ok" : currentProgress.status === "Pending Settlement" ? "b-am" : "b-no"}`} style={{ fontSize: "12px", padding: "4px 12px" }}>
+                  {currentProgress.status}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+              <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Assigned Target</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ind)" }}>{currentTarget.cgs_count} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBs</span></div>
+              </div>
+              <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Completed</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ok)" }}>{currentProgress.achievedCBs} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBs</span></div>
+              </div>
+              <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Remaining</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: remainingCBs > 0 ? "var(--warn)" : "var(--ok)" }}>{remainingCBs} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBs</span></div>
+              </div>
+              <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Achievement %</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ind)" }}>{currentProgress.percent}%</div>
+              </div>
+              <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Target Points</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ind)" }}>{currentProgress.points} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>pts</span></div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px", fontWeight: 600, color: "var(--tx2)", marginBottom: "8px" }}>
+                <span>Target Progress Bar</span>
+                <span>{currentProgress.achievedCBs} / {currentTarget.cgs_count} CBs ({currentProgress.percent}%)</span>
+              </div>
+              <div style={{ background: "var(--sur2)", height: "12px", borderRadius: "6px", overflow: "hidden", position: "relative" }}>
+                <div style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  height: "100%",
+                  width: `${Math.min(100, currentProgress.percent)}%`,
+                  background: currentProgress.percent >= 100 ? "var(--ok)" : currentProgress.percent >= 90 ? "var(--ind)" : "var(--warn)",
+                  borderRadius: "6px",
+                  transition: "width 0.5s ease"
+                }}></div>
+              </div>
+            </div>
+            
+            {currentTarget.notes && (
+              <div style={{ marginTop: "20px", padding: "12px 16px", background: "rgba(0,0,0,0.02)", borderRadius: "8px", borderLeft: "3px solid var(--ind)", fontSize: "13px", color: "var(--tx2)" }}>
+                <strong>Manager's Note:</strong> {currentTarget.notes}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="card" style={{ padding: "40px 20px", textAlign: "center", color: "var(--tx3)" }}>
+            <IconTarget size={48} style={{ margin: "0 auto 12px", opacity: 0.5, display: "block" }} />
+            <div style={{ fontWeight: 600, fontSize: "15px", color: "var(--tx2)" }}>No Active Targets Assigned</div>
+            <p style={{ fontSize: "13px", margin: "4px 0 0" }}>When your manager assigns a target, it will appear here.</p>
+          </div>
+        )}
+
+        <div className="card">
+          <div className="ctit">Target History Section</div>
+          <div className="tw">
+            <table>
+              <thead>
+                <tr>
+                  <th>Target Period</th>
+                  <th>Target CBs</th>
+                  <th>Completed CBs</th>
+                  <th>Achievement %</th>
+                  <th>Status</th>
+                  <th>Points Earned</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedTasks.length > 0 ? (
+                  sortedTasks.map((task, i) => {
+                    const prog = getTaskProgress(task);
+                    return (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>
+                          {new Date(task.from_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} &rarr; {new Date(task.to_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        </td>
+                        <td>{task.cgs_count} CBs</td>
+                        <td style={{ fontWeight: 600, color: "var(--tx2)" }}>{prog.achievedCBs}</td>
+                        <td>
+                          <span style={{ fontWeight: "bold" }}>{prog.percent}%</span>
+                        </td>
+                        <td>
+                          <span className={`bdg ${prog.status === "Active" ? "b-ok" : prog.status === "Pending Settlement" ? "b-am" : "b-no"}`}>
+                            {prog.status}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 700, color: prog.points > 0 ? "var(--ok)" : "var(--tx3)" }}>
+                          {prog.points > 0 ? `+${prog.points} pts` : "0 pts"}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>No target history records found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPoints = () => {
     const isWithinPointFilter = (timestamp) => {
       if (!timestamp || !timestamp.seconds) return false;
       const dt = new Date(timestamp.seconds * 1000);
       dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
       const dateStr = dt.toISOString().split("T")[0];
+      const d = new Date();
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      const today = d.toISOString().split("T")[0];
+
+      if (pointFilterPeriod === "today") {
+        return dateStr === today;
+      } else if (pointFilterPeriod === "this_week") {
+        const day = d.getDay() || 7;
+        const t = new Date(d);
+        t.setDate(t.getDate() - (day - 1));
+        const weekStart = t.toISOString().split("T")[0];
+        return dateStr >= weekStart && dateStr <= today;
+      } else if (pointFilterPeriod === "monthly") {
+        const monthPrefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        return dateStr.startsWith(monthPrefix);
+      } else if (pointFilterPeriod === "yearly") {
+        const yearPrefix = `${d.getFullYear()}`;
+        return dateStr.startsWith(yearPrefix);
+      } else if (pointFilterPeriod === "custom") {
+        return (!pointFilterFrom || dateStr >= pointFilterFrom) && (!pointFilterTo || dateStr <= pointFilterTo);
+      }
+      return true;
+    };
+
+    const isDateWithinPointFilter = (dateStr) => {
       const d = new Date();
       d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
       const today = d.toISOString().split("T")[0];
@@ -1113,7 +1355,16 @@ export default function EmployeeDashboard() {
       filteredMonthlyShopsCount++;
     });
     const filteredShopPoints = Math.floor(filteredMonthlyShopsCount / 100) * 50;
-    const filteredTotalPoints = filteredAttPoints + filteredCallPoints + filteredRepPoints + filteredShopPoints;
+
+    let filteredTargetPoints = 0;
+    if (tasksSnap) {
+      tasksSnap.filter(task => isDateWithinPointFilter(task.to_date)).forEach(task => {
+        const { points } = getTaskProgress(task);
+        filteredTargetPoints += points;
+      });
+    }
+
+    const filteredTotalPoints = filteredAttPoints + filteredCallPoints + filteredRepPoints + filteredShopPoints + filteredTargetPoints;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -1173,6 +1424,14 @@ export default function EmployeeDashboard() {
                   <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Shop Indexing (Monthly)</span>
                 </div>
                 <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredShopPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px dashed var(--bdr)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "rgba(93, 64, 55, 0.1)", color: "var(--ind)", display: "flex", alignItems: "center", justifyContent: "center" }}><IconTarget size={18} /></div>
+                  <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--tx)" }}>Target Achievement</span>
+                </div>
+                <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--ind)" }}>{filteredTargetPoints} <span style={{ fontSize: "12px", color: "var(--tx3)", fontWeight: 400 }}>pts</span></span>
               </div>
             </div>
           </div>
@@ -1267,12 +1526,14 @@ export default function EmployeeDashboard() {
                 <button className={`btn ${activeLogTab === "calls" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("calls")} style={activeLogTab !== "calls" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Productive Calls</button>
                 <button className={`btn ${activeLogTab === "shops" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("shops")} style={activeLogTab !== "shops" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Shops</button>
                 <button className={`btn ${activeLogTab === "reports" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("reports")} style={activeLogTab !== "reports" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Reports</button>
+                <button className={`btn ${activeLogTab === "targets" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("targets")} style={activeLogTab !== "targets" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Targets</button>
                 <button className={`btn ${activeLogTab === "points" ? "btn-p" : ""}`} onClick={() => setActiveLogTab("points")} style={activeLogTab !== "points" ? { background: "var(--sur2)", color: "var(--tx)", border: "1px solid var(--bdr)" } : {}}>Points</button>
               </div>
               {activeLogTab === "attendance" && renderAttendance()}
               {activeLogTab === "calls" && renderCalls()}
               {activeLogTab === "shops" && renderShops()}
               {activeLogTab === "reports" && renderReports()}
+              {activeLogTab === "targets" && renderTargets()}
               {activeLogTab === "points" && renderPoints()}
             </>
           )}
