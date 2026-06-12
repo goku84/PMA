@@ -110,6 +110,30 @@ export default function AdminDashboard() {
     };
   }, [router]);
 
+  const extractReportData = (rep) => {
+    let from_date = rep.from_date;
+    let to_date = rep.to_date;
+    let cb_count = parseInt(rep.cb_count) || 0;
+
+    if ((!from_date || !to_date || !cb_count) && rep.content) {
+      const periodMatch = rep.content.match(/Period:\s*(\d{4}-\d{2}-\d{2})\s*to\s*(\d{4}-\d{2}-\d{2})/i);
+      if (periodMatch) {
+        if (!from_date) from_date = periodMatch[1];
+        if (!to_date) to_date = periodMatch[2];
+      }
+      if (!cb_count) {
+         const cbsMatches = [...rep.content.matchAll(/-\s*(\d+)\s*CBs/gi)];
+         if (cbsMatches.length > 0) {
+             cb_count = cbsMatches.reduce((sum, match) => sum + parseInt(match[1]), 0);
+         } else {
+             const cbMatch = rep.content.match(/(\d+)\s*CBs/i);
+             if (cbMatch) cb_count = parseInt(cbMatch[1]);
+         }
+      }
+    }
+    return { from_date, to_date, cb_count };
+  };
+
   const fetchData = async () => {
     try {
       const [empRes, attRes, callsRes, shopsRes, repsRes, tasksRes] = await Promise.all([
@@ -240,8 +264,9 @@ export default function AdminDashboard() {
            let achievedCBs = 0;
            mapReps.forEach(rep => {
              if (rep.loggedBy === task.employee_email && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
-               if (rep.from_date && rep.to_date && rep.from_date >= task.from_date && rep.to_date <= task.to_date) {
-                 achievedCBs += parseInt(rep.cb_count || 0);
+               const { from_date, to_date, cb_count } = extractReportData(rep);
+               if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+                 achievedCBs += cb_count;
                }
              }
            });
@@ -1550,8 +1575,9 @@ export default function AdminDashboard() {
              repsSnap.forEach(doc => {
                const rep = doc.data();
                if (rep.loggedBy === task.employee_email && isWithinRange(rep.timestamp) && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
-                 if (rep.from_date && rep.to_date && rep.from_date >= task.from_date && rep.to_date <= task.to_date) {
-                   achievedCBs += parseInt(rep.cb_count || 0);
+                 const { from_date, to_date, cb_count } = extractReportData(rep);
+                 if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+                   achievedCBs += cb_count;
                  }
                }
              });
@@ -1602,9 +1628,10 @@ export default function AdminDashboard() {
                   if (repsSnap) {
                     repsSnap.forEach(doc => {
                       const rep = doc.data();
-                      if (rep.loggedBy === task.employee_email && rep.from_date && rep.to_date && rep.from_date >= task.from_date && rep.to_date <= task.to_date) {
+                      const { from_date, to_date, cb_count } = extractReportData(rep);
+                      if (rep.loggedBy === task.employee_email && from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
                         if (rep.status === 'approved' || rep.status === 'approved_no_points') {
-                          achievedCBs += parseInt(rep.cb_count || 0);
+                          achievedCBs += cb_count;
                         } else if (rep.status !== 'rejected') {
                           unreviewedReports++;
                         }
