@@ -73,6 +73,7 @@ export default function AdminDashboard() {
   const [dashFilterType, setDashFilterType] = useState("all");
   const [dashFilterFrom, setDashFilterFrom] = useState(getLocalToday());
   const [dashFilterTo, setDashFilterTo] = useState(getLocalToday());
+  const [taskSearch, setTaskSearch] = useState("");
   
   const [showAddTask, setShowAddTask] = useState(false);
   const [editTaskId, setEditTaskId] = useState(null);
@@ -536,6 +537,7 @@ export default function AdminDashboard() {
         shopPts: 0,
         reportCount: 0,
         reportPts: 0,
+        targetPts: 0,
         totalPoints: 0,
       };
     });
@@ -607,8 +609,32 @@ export default function AdminDashboard() {
       });
     }
 
+    if (tasksSnap) {
+      tasksSnap.forEach(task => {
+        if (dMetricsMap[task.employee_email]) {
+           let achievedCBs = 0;
+           if (repsSnap) {
+             repsSnap.forEach(doc => {
+               const rep = doc.data();
+               if (rep.loggedBy === task.employee_email && isWithinRange(rep.timestamp) && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
+                 const { from_date, to_date, cb_count } = extractReportData(rep);
+                 if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+                   achievedCBs += cb_count;
+                 }
+               }
+             });
+           }
+           const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+           let pts = 0;
+           if (percent >= 100) pts = 100;
+           else if (percent >= 90) pts = 75;
+           dMetricsMap[task.employee_email].targetPts += pts;
+        }
+      });
+    }
+
     const dashLeaderboard = Object.values(dMetricsMap).map((emp) => {
-      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts;
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + emp.targetPts;
       return emp;
     }).sort((a, b) => b.totalPoints - a.totalPoints);
 
@@ -1063,7 +1089,13 @@ export default function AdminDashboard() {
 
           if (callFilterFrom && dateStr && dateStr < callFilterFrom) include = false;
           if (callFilterTo && dateStr && dateStr > callFilterTo) include = false;
-          if (callFilterSearch && !d.loggedBy.toLowerCase().includes(callFilterSearch.toLowerCase()) && !empName.toLowerCase().includes(callFilterSearch.toLowerCase())) include = false;
+          if (callFilterSearch) {
+            const searchLower = callFilterSearch.toLowerCase();
+            const matchesEmp = empName.toLowerCase().includes(searchLower) || d.loggedBy?.toLowerCase().includes(searchLower);
+            const matchesAgency = d.agency_name?.toLowerCase().includes(searchLower);
+            const matchesBeat = d.customerName?.toLowerCase().includes(searchLower);
+            if (!matchesEmp && !matchesAgency && !matchesBeat) include = false;
+          }
           
           if (include) {
             filteredCallList.push(d);
@@ -1110,7 +1142,7 @@ export default function AdminDashboard() {
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px" }}>
             <span>Productive Calls Verification Queue</span>
             <div className="filter-row">
-              <input type="text" placeholder="Search Name or Email" value={callFilterSearch} onChange={(e) => setCallFilterSearch(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
+              <input type="text" placeholder="Search Name, Agency, or Beat" value={callFilterSearch} onChange={(e) => setCallFilterSearch(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "220px" }} />
               <input type="date" value={callFilterFrom} onChange={(e) => setCallFilterFrom(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
               <input type="date" value={callFilterTo} onChange={(e) => setCallFilterTo(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
             </div>
@@ -1121,6 +1153,7 @@ export default function AdminDashboard() {
                 <tr>
                   <th>Date</th>
                   <th>Employee Name</th>
+                  <th>Agency Name</th>
                   <th>Beat Name</th>
                   <th>Number of Calls</th>
                   <th>Total Sales</th>
@@ -1140,6 +1173,7 @@ export default function AdminDashboard() {
                       <tr key={d.id || i} style={{ opacity: d.status === 'Rejected' ? 0.6 : 1 }}>
                         <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
                         <td>{d.empName}</td>
+                        <td>{d.agency_name || "—"}</td>
                         <td style={{ fontWeight: 600 }}>{d.customerName || "—"}</td>
                         <td style={{ fontFamily: "var(--font-dm-mono)", fontWeight: 600 }}>{d.durationMinutes || 0}</td>
                         <td style={{ fontWeight: 600 }}>{d.phoneNumber || "—"}</td>
@@ -1163,7 +1197,7 @@ export default function AdminDashboard() {
                     );
                   })
                 ) : (
-                  <tr><td colSpan="8" style={{ textAlign: "center", color: "var(--tx3)" }}>No productive calls available.</td></tr>
+                  <tr><td colSpan="9" style={{ textAlign: "center", color: "var(--tx3)" }}>No productive calls available.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1300,7 +1334,10 @@ export default function AdminDashboard() {
                       {expandedShopEmp[eName] && shopsByEmp[eName].map((d, j) => {
                         let dStr = "—";
                         if (d.timestamp && d.timestamp.seconds) {
-                          dStr = new Date(d.timestamp.seconds * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                          const dateObj = new Date(d.timestamp.seconds * 1000);
+                          const formattedDate = dateObj.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                          const formattedTime = dateObj.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+                          dStr = `${formattedDate}, ${formattedTime}`;
                         }
                         return (
                           <tr key={j + "-sub"} style={{ background: "transparent", opacity: d.status === 'verified' ? 0.7 : 1 }}>
@@ -1660,19 +1697,37 @@ export default function AdminDashboard() {
   };
 
   const renderTasks = () => {
+    const filteredTasks = (tasksSnap || []).filter(task => {
+      if (!taskSearch) return true;
+      const emp = employeesSnap.find(e => e.email?.toLowerCase() === task.employee_email?.toLowerCase());
+      const empName = emp?.name || "";
+      const empId = emp?.userid || "";
+      const searchLower = taskSearch.toLowerCase();
+      return empName.toLowerCase().includes(searchLower) || empId.toLowerCase().includes(searchLower) || task.employee_email?.toLowerCase().includes(searchLower);
+    });
+
     return (
       <>
         <div className="card">
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px" }}>
             <span>Task Assignment Database</span>
-            <button className="btn btn-ok" onClick={() => setShowAddTask(true)}>+ Add Assignment Task</button>
+            <div className="filter-row" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <input 
+                type="text" 
+                placeholder="Search Employee Name" 
+                value={taskSearch} 
+                onChange={(e) => setTaskSearch(e.target.value)} 
+                style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "200px" }} 
+              />
+              <button className="btn btn-ok" onClick={() => setShowAddTask(true)}>+ Add Assignment Task</button>
+            </div>
           </div>
           <div className="tw">
             <table>
               <thead>
                 <tr>
                   <th>Date Assigned</th>
-                  <th>Employee Email</th>
+                  <th>Employee Name</th>
                   <th>Period</th>
                   <th>Target CBs</th>
                   <th>Progress</th>
@@ -1682,8 +1737,10 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {tasksSnap && tasksSnap.length > 0 ? tasksSnap.map((task, i) => {
+                {filteredTasks.length > 0 ? filteredTasks.map((task, i) => {
                   const dStr = new Date(task.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                  const emp = employeesSnap.find(e => e.email?.toLowerCase() === task.employee_email?.toLowerCase());
+                  const empName = emp?.name || task.employee_email;
                   
                   // Compute progress
                   let achievedCBs = 0;
@@ -1718,7 +1775,7 @@ export default function AdminDashboard() {
                   return (
                     <tr key={i}>
                       <td style={{ fontSize: "13px", color: "var(--tx2)" }}>{dStr}</td>
-                      <td><b>{task.employee_email}</b></td>
+                      <td><b>{empName}</b></td>
                       <td style={{ fontSize: "13px" }}>{task.from_date} to {task.to_date}</td>
                       <td style={{ fontWeight: 600 }}>{task.cgs_count}</td>
                       <td>
@@ -1743,7 +1800,7 @@ export default function AdminDashboard() {
                       </td>
                     </tr>
                   )
-                }) : <tr><td colSpan="7" style={{ textAlign: "center", color: "var(--tx3)" }}>No tasks assigned.</td></tr>}
+                }) : <tr><td colSpan="8" style={{ textAlign: "center", color: "var(--tx3)" }}>{taskSearch ? "No matching tasks found." : "No tasks assigned."}</td></tr>}
               </tbody>
             </table>
           </div>

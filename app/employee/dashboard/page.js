@@ -416,7 +416,7 @@ export default function EmployeeDashboard() {
   if (totalCallCount >= 20) allCallPoints = 5;
   else if (totalCallCount >= 16) allCallPoints = 2;
   const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
-  const allShopPoints = Math.floor(shopsSnap.length / 100) * 50;
+  const allShopPoints = Math.floor(shopsSnap.filter(s => s.status === 'verified').length / 100) * 50;
 
   let allTargetPoints = 0;
   if (tasksSnap) {
@@ -440,7 +440,7 @@ export default function EmployeeDashboard() {
     });
   }
 
-  const totalPoints = allAttPoints + allCallPoints + allRepPoints + allShopPoints + allTargetPoints;
+  const totalPoints = allCallPoints + allRepPoints + allShopPoints + allTargetPoints;
 
   // Calls Today Calculation for Dashboard
   const realToday = new Date();
@@ -780,7 +780,12 @@ export default function EmployeeDashboard() {
       }
       if (callFilterFrom && dateStr && dateStr < callFilterFrom) return false;
       if (callFilterTo && dateStr && dateStr > callFilterTo) return false;
-      if (callFilterCustomer && d.customerName && !d.customerName.toLowerCase().includes(callFilterCustomer.toLowerCase())) return false;
+      if (callFilterCustomer) {
+        const searchLower = callFilterCustomer.toLowerCase();
+        const matchesAgency = d.agency_name?.toLowerCase().includes(searchLower);
+        const matchesBeat = d.customerName?.toLowerCase().includes(searchLower);
+        if (!matchesAgency && !matchesBeat) return false;
+      }
       return true;
     }).sort((a, b) => {
       const tA = a.timestamp ? a.timestamp.seconds : 0;
@@ -844,7 +849,7 @@ export default function EmployeeDashboard() {
           <div className="ctit" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
             <span>Productive Calls History</span>
             <div className="filter-row">
-              <input type="text" placeholder="Search Beat Area" value={callFilterCustomer} onChange={(e) => { setCallFilterCustomer(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "150px" }} />
+              <input type="text" placeholder="Search Agency or Beat" value={callFilterCustomer} onChange={(e) => { setCallFilterCustomer(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", width: "180px" }} />
               <input type="date" value={callFilterFrom} onChange={(e) => { setCallFilterFrom(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="From Date" />
               <input type="date" value={callFilterTo} onChange={(e) => { setCallFilterTo(e.target.value); setCallPage(1); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }} title="To Date" />
             </div>
@@ -853,6 +858,7 @@ export default function EmployeeDashboard() {
             <table>
               <thead>
                 <tr>
+                  <th>Agency Name</th>
                   <th>Beat (Area) / Date</th>
                   <th>Number of Calls</th>
                   <th>Total Sales</th>
@@ -870,17 +876,15 @@ export default function EmployeeDashboard() {
                       <Fragment key={i}>
                         <tr onClick={() => setExpandedDates(prev => ({ ...prev, [dStr]: !prev[dStr] }))} style={{ cursor: "pointer", background: "var(--sur2)" }}>
                           <td><b>{dStr}</b></td>
-                          <td colSpan="4"><b>{callsInDate.length} Beat Report(s) Logged</b></td>
+                          <td colSpan="5"><b>{callsInDate.length} Beat Report(s) Logged</b></td>
                           <td style={{ textAlign: "right" }}>{isExpanded ? "▲" : "▼"}</td>
                         </tr>
                         {isExpanded && callsInDate.map((c, j) => {
                           const itemPoints = c.status === "Verified" ? (c.durationMinutes >= 20 ? 5 : c.durationMinutes >= 16 ? 2 : 0) : 0;
                           return (
                             <tr key={`${i}-${j}`} style={{ background: "var(--sur)" }}>
-                              <td style={{ paddingLeft: "20px" }}>
-                                <div>📍 <b>Beat:</b> {c.customerName || "—"}</div>
-                                <div style={{ fontSize: "12px", color: "var(--tx2)", marginTop: "4px", marginLeft: "22px" }}>🏢 <b>Agency:</b> {c.agency_name || "—"}</div>
-                              </td>
+                              <td>{c.agency_name || "—"}</td>
+                              <td>📍 {c.customerName || "—"}</td>
                               <td style={{ fontFamily: "var(--font-dm-mono)" }}>{c.durationMinutes || 0}</td>
                               <td style={{ fontWeight: 600 }}>{c.phoneNumber || "—"}</td>
                               <td style={{ color: "var(--tx2)", fontSize: "13px" }}>{c.notes || "—"}</td>
@@ -900,7 +904,7 @@ export default function EmployeeDashboard() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>
+                    <td colSpan="7" style={{ textAlign: "center", color: "var(--tx3)" }}>
                       No productive call records found matching criteria.
                     </td>
                   </tr>
@@ -974,6 +978,7 @@ export default function EmployeeDashboard() {
             <table>
               <thead>
                 <tr>
+                  <th>Date & Time</th>
                   <th>Shop Name</th>
                   <th>Product Detail</th>
                   <th>Contact Phone</th>
@@ -983,18 +988,28 @@ export default function EmployeeDashboard() {
               </thead>
               <tbody>
                 {filteredShops.length > 0 ? (
-                  filteredShops.map((d, i) => (
-                    <tr key={i}>
-                      <td><b>{d.shopName}</b></td>
-                      <td>{d.productDetail || d.ownerName}</td>
-                      <td>{d.phone}</td>
-                      <td>{d.address}</td>
-                      <td><span className={`bdg ${d.status === 'verified' ? 'b-ok' : 'b-am'}`}>{d.status === 'verified' ? 'Verified' : 'Pending'}</span></td>
-                    </tr>
-                  ))
+                  filteredShops.map((d, i) => {
+                    let dStr = "—";
+                    if (d.timestamp && d.timestamp.seconds) {
+                      const dateObj = new Date(d.timestamp.seconds * 1000);
+                      const formattedDate = dateObj.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+                      const formattedTime = dateObj.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+                      dStr = `${formattedDate}, ${formattedTime}`;
+                    }
+                    return (
+                      <tr key={i}>
+                        <td style={{ fontSize: "13.5px", color: "var(--tx2)" }}>{dStr}</td>
+                        <td><b>{d.shopName}</b></td>
+                        <td>{d.productDetail || d.ownerName}</td>
+                        <td>{d.phone}</td>
+                        <td>{d.address}</td>
+                        <td><span className={`bdg ${d.status === 'verified' ? 'b-ok' : 'b-am'}`}>{d.status === 'verified' ? 'Verified' : 'Pending'}</span></td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>
+                    <td colSpan="6" style={{ textAlign: "center", color: "var(--tx3)" }}>
                       No shops found matching filters.
                     </td>
                   </tr>
@@ -1363,7 +1378,7 @@ export default function EmployeeDashboard() {
     else if (filteredVerifiedCalls >= 16) filteredCallPoints = 2;
     const filteredRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved" && isWithinPointFilter(r.timestamp)).length * 15;
     let filteredMonthlyShopsCount = 0;
-    shopsSnap.filter(s => isWithinPointFilter(s.timestamp)).forEach(() => {
+    shopsSnap.filter(s => s.status === 'verified' && isWithinPointFilter(s.timestamp)).forEach(() => {
       filteredMonthlyShopsCount++;
     });
     const filteredShopPoints = Math.floor(filteredMonthlyShopsCount / 100) * 50;
@@ -1376,7 +1391,7 @@ export default function EmployeeDashboard() {
       });
     }
 
-    const filteredTotalPoints = filteredAttPoints + filteredCallPoints + filteredRepPoints + filteredShopPoints + filteredTargetPoints;
+    const filteredTotalPoints = filteredCallPoints + filteredRepPoints + filteredShopPoints + filteredTargetPoints;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
