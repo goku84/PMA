@@ -507,6 +507,7 @@ export default function AdminDashboard() {
         shopPts: 0,
         reportCount: 0,
         reportPts: 0,
+        targetPts: 0,
         totalPoints: 0,
       };
     });
@@ -578,8 +579,32 @@ export default function AdminDashboard() {
       });
     }
 
+    if (tasksSnap) {
+      tasksSnap.forEach(task => {
+        if (dMetricsMap[task.employee_email]) {
+          let achievedCBs = 0;
+          if (repsSnap) {
+            repsSnap.forEach(doc => {
+              const rep = doc.data();
+              if (rep.loggedBy === task.employee_email && isWithinRange(rep.timestamp) && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
+                const { from_date, to_date, cb_count } = extractReportData(rep);
+                if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+                  achievedCBs += cb_count;
+                }
+              }
+            });
+          }
+          const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+          let pts = 0;
+          if (percent >= 100) pts = 100;
+          else if (percent >= 90) pts = 75;
+          dMetricsMap[task.employee_email].targetPts += pts;
+        }
+      });
+    }
+
     const dashLeaderboard = Object.values(dMetricsMap).map((emp) => {
-      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts;
+      emp.totalPoints = emp.callPts + emp.shopPts + emp.reportPts + (emp.targetPts || 0);
       return emp;
     }).sort((a, b) => b.totalPoints - a.totalPoints);
 
