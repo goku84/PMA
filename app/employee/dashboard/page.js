@@ -378,7 +378,7 @@ export default function EmployeeDashboard() {
 
     let formattedContent = `Period: ${fromDate} to ${toDate}\n\nAgencies Visited:\n`;
     reportAgencies.forEach((agency, index) => {
-      formattedContent += `${index + 1}. ${agency.name} - ${agency.cgs} CBs\n`;
+      formattedContent += `${index + 1}. ${agency.name} - ${agency.cgs} CBS\n`;
     });
     if (note) {
       formattedContent += `\nNote:\n${note}`;
@@ -471,7 +471,7 @@ export default function EmployeeDashboard() {
       const outTime = todayAtt.out ? todayAtt.out.seconds * 1000 : Date.now();
       shiftHrs = (outTime - inTime) / (1000 * 60 * 60);
     }
-    const shiftPercent = Math.min(100, (shiftHrs / 4) * 100);
+    const shiftPercent = Math.min(100, (shiftHrs / 6) * 100);
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -570,7 +570,7 @@ export default function EmployeeDashboard() {
                 <div style={{ marginTop: "40px", textAlign: "left" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--tx2)", marginBottom: "8px" }}>
                     <span>Shift Progress</span>
-                    <span>{Math.floor(shiftHrs)}:{Math.floor((shiftHrs % 1) * 60).toString().padStart(2, '0')} / 4:00 hrs</span>
+                    <span>{Math.floor(shiftHrs)}:{Math.floor((shiftHrs % 1) * 60).toString().padStart(2, '0')} / 6:00 hrs</span>
                   </div>
                   <div className="pt" style={{ height: "10px", background: "var(--bdr)", borderRadius: "10px", overflow: "hidden" }}>
                     <div className="pf" style={{ width: `${shiftPercent}%`, height: "100%", background: todayAtt && !todayAtt.out ? "var(--ok)" : "var(--tx2)" }}></div>
@@ -612,7 +612,7 @@ export default function EmployeeDashboard() {
       const outTime = todayAtt.out ? todayAtt.out.seconds * 1000 : Date.now();
       shiftHrs = (outTime - inTime) / (1000 * 60 * 60);
     }
-    const shiftPercent = Math.min(100, (shiftHrs / 4) * 100);
+    const shiftPercent = Math.min(100, (shiftHrs / 6) * 100);
 
     // Calendar setup
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -647,7 +647,7 @@ export default function EmployeeDashboard() {
           const outTime = rec.out ? rec.out.seconds * 1000 : Date.now();
           hrs = (outTime - inTime) / (1000 * 60 * 60);
         }
-        if (hrs < 4) return "Partial";
+        if (hrs < 6) return "Partial";
         return "Present";
       }
       return "Absent";
@@ -659,7 +659,7 @@ export default function EmployeeDashboard() {
         const inTime = d.in.seconds * 1000;
         const outTime = d.out ? d.out.seconds * 1000 : Date.now();
         const hrs = (outTime - inTime) / (1000 * 60 * 60);
-        if (hrs < 4) dynStatus = "partial";
+        if (hrs < 6) dynStatus = "partial";
       }
       return { ...d, dynStatus };
     });
@@ -1205,19 +1205,19 @@ export default function EmployeeDashboard() {
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginBottom: "24px" }}>
               <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Assigned Target</div>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ind)" }}>{currentTarget.cgs_count} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBs</span></div>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>CBS Target</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ind)" }}>{currentTarget.cgs_count} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBS</span></div>
               </div>
               <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Completed</div>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ok)" }}>{currentProgress.achievedCBs} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBs</span></div>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>CBS Completed</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ok)" }}>{currentProgress.achievedCBs} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBS</span></div>
               </div>
               <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
                 <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Remaining</div>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: remainingCBs > 0 ? "var(--warn)" : "var(--ok)" }}>{remainingCBs} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBs</span></div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: remainingCBs > 0 ? "var(--warn)" : "var(--ok)" }}>{remainingCBs} <span style={{ fontSize: "12px", color: "var(--tx3)" }}>CBS</span></div>
               </div>
               <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>Achievement %</div>
+                <div style={{ fontSize: "11px", color: "var(--tx3)", fontWeight: 500, marginBottom: "4px" }}>CBS Achievement</div>
                 <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ind)" }}>{currentProgress.percent}%</div>
               </div>
               <div style={{ background: "rgba(93, 64, 55, 0.03)", padding: "16px", borderRadius: "12px", border: "1px solid var(--bdr)", textAlign: "center" }}>
@@ -1229,7 +1229,7 @@ export default function EmployeeDashboard() {
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px", fontWeight: 600, color: "var(--tx2)", marginBottom: "8px" }}>
                 <span>Target Progress Bar</span>
-                <span>{currentProgress.achievedCBs} / {currentTarget.cgs_count} CBs ({currentProgress.percent}%)</span>
+                <span>{currentProgress.achievedCBs} / {currentTarget.cgs_count} CBS ({currentProgress.percent}%)</span>
               </div>
               <div style={{ background: "var(--sur2)", height: "12px", borderRadius: "6px", overflow: "hidden", position: "relative" }}>
                 <div style={{
@@ -1266,9 +1266,9 @@ export default function EmployeeDashboard() {
               <thead>
                 <tr>
                   <th>Target Period</th>
-                  <th>Target CBs</th>
-                  <th>Completed CBs</th>
-                  <th>Achievement %</th>
+                  <th>CBS Target</th>
+                  <th>CBS Completed</th>
+                  <th>CBS Achievement</th>
                   <th>Status</th>
                   <th>Points Earned</th>
                 </tr>
@@ -1282,7 +1282,7 @@ export default function EmployeeDashboard() {
                         <td style={{ fontWeight: 600 }}>
                           {new Date(task.from_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} &rarr; {new Date(task.to_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                         </td>
-                        <td>{task.cgs_count} CBs</td>
+                        <td>{task.cgs_count} CBS</td>
                         <td style={{ fontWeight: 600, color: "var(--tx2)" }}>{prog.achievedCBs}</td>
                         <td>
                           <span style={{ fontWeight: "bold" }}>{prog.percent}%</span>
@@ -1647,7 +1647,7 @@ export default function EmployeeDashboard() {
                         <input type="text" placeholder="Agency Name" value={agency.name} onChange={(e) => { const newA = [...reportAgencies]; newA[i].name = e.target.value; setReportAgencies(newA); }} required />
                       </div>
                       <div className="fg" style={{ margin: 0 }}>
-                        <input type="number" placeholder="No of CBs" value={agency.cgs} onChange={(e) => { const newA = [...reportAgencies]; newA[i].cgs = e.target.value; setReportAgencies(newA); }} required min="0" />
+                        <input type="number" placeholder="No of CBS" value={agency.cgs} onChange={(e) => { const newA = [...reportAgencies]; newA[i].cgs = e.target.value; setReportAgencies(newA); }} required min="0" />
                       </div>
                       <button type="button" className="btn" style={{ background: "var(--no)", color: "#fff", padding: "10px", height: "42px" }} onClick={() => { if (reportAgencies.length > 1) { const newA = [...reportAgencies]; newA.splice(i, 1); setReportAgencies(newA); } }}>
                         <IconX size={16} />

@@ -1731,7 +1731,7 @@ export default function AdminDashboard() {
                   <th>Date Assigned</th>
                   <th>Employee Name</th>
                   <th>Period</th>
-                  <th>Target CBs</th>
+                  <th>CBS Target</th>
                   <th>Progress</th>
                   <th>Notes</th>
                   <th>Status</th>
@@ -2011,7 +2011,7 @@ export default function AdminDashboard() {
                 <div className="fg"><label>To Date *</label><input type="date" value={newTask.to_date} onChange={(e) => setNewTask({...newTask, to_date: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
-                <div className="fg"><label>CGS Count *</label><input type="number" value={newTask.cgs_count} onChange={(e) => setNewTask({...newTask, cgs_count: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
+                <div className="fg"><label>CBS Count *</label><input type="number" value={newTask.cgs_count} onChange={(e) => setNewTask({...newTask, cgs_count: e.target.value})} required style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", width: "100%" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
                 <div className="fg"><label>Notes</label><textarea value={newTask.notes} onChange={(e) => setNewTask({...newTask, notes: e.target.value})} rows="4" style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", resize: "vertical", fontFamily: "inherit" }}></textarea></div>
