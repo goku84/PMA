@@ -310,7 +310,8 @@ export default function AdminDashboard() {
         const existingEmp = employeesSnap.find(emp => emp.id === editId);
         if (existingEmp && existingEmp.auth_user_id && newEmp.password) {
           try {
-            await updateAuthUserPassword(existingEmp.auth_user_id, newEmp.password);
+            const res = await updateAuthUserPassword(existingEmp.auth_user_id, newEmp.password);
+            if (res?.error) throw new Error(res.error);
           } catch (authError) {
             console.error("Error updating auth user password:", authError);
             alert("Warning: Could not update Supabase Auth password. " + authError.message);
@@ -364,7 +365,8 @@ export default function AdminDashboard() {
         const empToDelete = employeesSnap.find(emp => emp.id === id);
         if (empToDelete && empToDelete.auth_user_id) {
           try {
-            await deleteAuthUser(empToDelete.auth_user_id);
+            const res = await deleteAuthUser(empToDelete.auth_user_id);
+            if (res?.error) throw new Error(res.error);
           } catch (authError) {
             console.error("Error deleting auth user:", authError);
             alert("Warning: Could not delete Supabase Auth user. " + authError.message);

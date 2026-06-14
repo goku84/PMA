@@ -14,21 +14,29 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || '', {
 });
 
 export async function deleteAuthUser(authUserId) {
-  if (!supabaseServiceKey) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables.");
+  try {
+    if (!supabaseServiceKey) {
+      return { error: "SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables." };
+    }
+    const { data, error } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
+    if (error) return { error: error.message };
+    return { data };
+  } catch (err) {
+    return { error: err.message };
   }
-  const { data, error } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
-  if (error) throw error;
-  return data;
 }
 
 export async function updateAuthUserPassword(authUserId, newPassword) {
-  if (!supabaseServiceKey) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables.");
+  try {
+    if (!supabaseServiceKey) {
+      return { error: "SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables." };
+    }
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(authUserId, {
+      password: newPassword,
+    });
+    if (error) return { error: error.message };
+    return { data };
+  } catch (err) {
+    return { error: err.message };
   }
-  const { data, error } = await supabaseAdmin.auth.admin.updateUserById(authUserId, {
-    password: newPassword,
-  });
-  if (error) throw error;
-  return data;
 }
