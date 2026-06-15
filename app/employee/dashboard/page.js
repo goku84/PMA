@@ -33,6 +33,7 @@ import {
   IconMenu2,
   IconListCheck,
   IconTarget,
+  IconLoader2,
 } from "@tabler/icons-react";
 
 const getLocalToday = () => {
@@ -75,6 +76,7 @@ export default function EmployeeDashboard() {
   const [currentTime, setCurrentTime] = useState("");
   const [reportFormType, setReportFormType] = useState("weekly");
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calYear, setCalYear] = useState(new Date().getFullYear());
@@ -296,6 +298,8 @@ export default function EmployeeDashboard() {
 
   const submitCallForm = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const fd = new FormData(e.target);
     const beat = fd.get("beat_name");
     const agencyName = fd.get("agency_name");
@@ -328,11 +332,14 @@ export default function EmployeeDashboard() {
       fetchData(activeUser);
     } catch (err) {
       alert(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const submitShopForm = async (e) => {
     e.preventDefault();
+    if (isUploading) return;
     const fd = new FormData(e.target);
     setIsUploading(true);
     try {
@@ -369,6 +376,8 @@ export default function EmployeeDashboard() {
 
   const submitReportForm = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const fd = new FormData(e.target);
     const rType = fd.get("r_type");
 
@@ -401,6 +410,8 @@ export default function EmployeeDashboard() {
       fetchData(activeUser);
     } catch (err) {
       alert(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -553,16 +564,18 @@ export default function EmployeeDashboard() {
                   ) : (
                     <div style={{ position: "relative", width: "100%" }}>
                       <input type="file" accept="image/*" capture="environment" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
-                      <button className="btn" style={{ background: "var(--no)", color: "#fff", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
-                        <IconLogout size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check Out"}
+                      <button className="btn" style={{ background: "var(--no)", color: "#fff", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }} disabled={isUploading}>
+                        {isUploading ? <IconLoader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <IconLogout size={16} />}
+                        {isUploading ? "Uploading..." : "Take Photo to Check Out"}
                       </button>
                     </div>
                   )
                 ) : (
                   <div style={{ position: "relative", width: "100%" }}>
                     <input type="file" accept="image/*" capture="environment" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
-                    <button className="btn" style={{ background: "#fff", color: "var(--ok)", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
-                      <IconLogin size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check In"}
+                    <button className="btn" style={{ background: "#fff", color: "var(--ok)", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }} disabled={isUploading}>
+                      {isUploading ? <IconLoader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <IconLogin size={16} />}
+                      {isUploading ? "Uploading..." : "Take Photo to Check In"}
                     </button>
                   </div>
                 )}
@@ -1482,6 +1495,12 @@ export default function EmployeeDashboard() {
 
   return (
     <div className="shell">
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
       {isMobileMenuOpen && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 90 }}
@@ -1596,7 +1615,10 @@ export default function EmployeeDashboard() {
                   <label>Notes (Optional)</label>
                   <textarea name="notes" placeholder="Any additional comments..." style={{ width: "100%", height: "80px", padding: "10px", borderRadius: "8px", border: "1.5px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)", outline: "none", resize: "none", fontSize: "14px" }}></textarea>
                 </div>
-                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Submit Productive Call</button>
+                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px" }} disabled={isSubmitting}>
+                  {isSubmitting && <IconLoader2 size={18} style={{ animation: "spin 1s linear infinite" }} />}
+                  {isSubmitting ? "Submitting..." : "Submit Productive Call"}
+                </button>
               </form>
             )}
 
@@ -1618,7 +1640,10 @@ export default function EmployeeDashboard() {
                   <label>Upload Shop Photo *</label>
                   <input type="file" name="s_photo" accept="image/*" capture="environment" required style={{ border: "1.5px solid var(--bdr)", padding: "8px", borderRadius: "8px", width: "100%" }} />
                 </div>
-                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }} disabled={isUploading}>{isUploading ? "Uploading..." : "Commit Shop Index"}</button>
+                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px" }} disabled={isUploading}>
+                  {isUploading && <IconLoader2 size={18} style={{ animation: "spin 1s linear infinite" }} />}
+                  {isUploading ? "Uploading..." : "Commit Shop Index"}
+                </button>
               </form>
             )}
 
@@ -1659,7 +1684,10 @@ export default function EmployeeDashboard() {
                 <div style={{ fontSize: "13px", color: "var(--am)", margin: "10px 0", fontWeight: 500, lineHeight: "1.4" }}>
                   ⚠ Weekly reports must be submitted before Monday 8:00 AM. Reports submitted after the deadline may be approved without points.
                 </div>
-                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>Transmit Report Log</button>
+                <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px" }} disabled={isSubmitting}>
+                  {isSubmitting && <IconLoader2 size={18} style={{ animation: "spin 1s linear infinite" }} />}
+                  {isSubmitting ? "Submitting..." : "Transmit Report Log"}
+                </button>
               </form>
             )}
           </div>

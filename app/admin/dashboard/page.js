@@ -24,6 +24,7 @@ import {
   IconListCheck,
   IconEye,
   IconEyeOff,
+  IconLoader2,
 } from "@tabler/icons-react";
 
 const getLocalToday = () => {
@@ -91,6 +92,7 @@ export default function AdminDashboard() {
   const [leaderFilterType, setLeaderFilterType] = useState("all");
   const [leaderFilterFrom, setLeaderFilterFrom] = useState(getLocalToday());
   const [leaderFilterTo, setLeaderFilterTo] = useState(getLocalToday());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -308,6 +310,8 @@ export default function AdminDashboard() {
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       if (editId) {
         const existingEmp = employeesSnap.find(emp => emp.id === editId);
@@ -367,6 +371,8 @@ export default function AdminDashboard() {
       fetchData();
     } catch (err) {
       alert("Error saving employee: " + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -396,6 +402,8 @@ export default function AdminDashboard() {
 
   const handleAddTask = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const hasOverlap = tasksSnap.some(task => {
         if (task.id === editTaskId) return false;
@@ -439,6 +447,8 @@ export default function AdminDashboard() {
       fetchData();
     } catch (err) {
       alert("Error saving task: " + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1902,6 +1912,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="shell">
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
       {isMobileMenuOpen && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 90 }}
@@ -2024,7 +2040,10 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
-              <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>{editId ? "Update Employee" : "Save Employee"}</button>
+              <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px" }} disabled={isSubmitting}>
+                {isSubmitting && <IconLoader2 size={18} style={{ animation: "spin 1s linear infinite" }} />}
+                {isSubmitting ? (editId ? "Updating..." : "Saving...") : (editId ? "Update Employee" : "Save Employee")}
+              </button>
             </form>
           </div>
         </div>
@@ -2059,7 +2078,10 @@ export default function AdminDashboard() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px", marginBottom: "14px" }}>
                 <div className="fg"><label>Notes</label><textarea value={newTask.notes} onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })} rows="4" style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--bdr)", background: "#fff", resize: "vertical", fontFamily: "inherit" }}></textarea></div>
               </div>
-              <button type="submit" style={{ width: "100%", marginTop: "10px", padding: "12px", background: "#2e2a6b", color: "white", border: "none", borderRadius: "8px", fontWeight: "bold", cursor: "pointer", fontSize: "14px" }}>{editTaskId ? "Update Task" : "Assign Task"}</button>
+              <button type="submit" style={{ width: "100%", marginTop: "10px", padding: "12px", background: "#2e2a6b", color: "white", border: "none", borderRadius: "8px", fontWeight: "bold", cursor: "pointer", fontSize: "14px", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px" }} disabled={isSubmitting}>
+                {isSubmitting && <IconLoader2 size={18} style={{ animation: "spin 1s linear infinite" }} />}
+                {isSubmitting ? (editTaskId ? "Updating..." : "Assigning...") : (editTaskId ? "Update Task" : "Assign Task")}
+              </button>
             </form>
           </div>
         </div>
