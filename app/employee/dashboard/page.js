@@ -552,7 +552,7 @@ export default function EmployeeDashboard() {
                     <button className="btn" disabled style={{ background: "rgba(255,255,255,0.1)", color: "var(--tx2)", padding: "12px 0", borderRadius: "30px", fontWeight: 600, width: "100%" }}>Shift Completed for Today</button>
                   ) : (
                     <div style={{ position: "relative", width: "100%" }}>
-                      <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
+                      <input type="file" accept="image/*" capture="environment" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
                       <button className="btn" style={{ background: "var(--no)", color: "#fff", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
                         <IconLogout size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check Out"}
                       </button>
@@ -560,7 +560,7 @@ export default function EmployeeDashboard() {
                   )
                 ) : (
                   <div style={{ position: "relative", width: "100%" }}>
-                    <input type="file" accept="image/*" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
+                    <input type="file" accept="image/*" capture="environment" onChange={handleAttendancePhoto} disabled={isUploading} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer", top: 0, left: 0, zIndex: 10 }} />
                     <button className="btn" style={{ background: "#fff", color: "var(--ok)", padding: "12px 0", borderRadius: "30px", fontWeight: 700, width: "100%", display: "flex", justifyContent: "center", gap: "6px" }}>
                       <IconLogin size={16} /> {isUploading ? "Uploading..." : "Take Photo to Check In"}
                     </button>
@@ -1616,7 +1616,7 @@ export default function EmployeeDashboard() {
                 </div>
                 <div className="fg">
                   <label>Upload Shop Photo *</label>
-                  <input type="file" name="s_photo" accept="image/*" required style={{ border: "1.5px solid var(--bdr)", padding: "8px", borderRadius: "8px", width: "100%" }} />
+                  <input type="file" name="s_photo" accept="image/*" capture="environment" required style={{ border: "1.5px solid var(--bdr)", padding: "8px", borderRadius: "8px", width: "100%" }} />
                 </div>
                 <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }} disabled={isUploading}>{isUploading ? "Uploading..." : "Commit Shop Index"}</button>
               </form>
