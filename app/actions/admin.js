@@ -26,14 +26,12 @@ export async function deleteAuthUser(authUserId) {
   }
 }
 
-export async function updateAuthUserPassword(authUserId, newPassword) {
+export async function updateAuthUserCredentials(authUserId, updates) {
   try {
     if (!supabaseServiceKey) {
       return { error: "SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables." };
     }
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(authUserId, {
-      password: newPassword,
-    });
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(authUserId, updates);
     if (error) return { error: error.message };
     return { data };
   } catch (err) {

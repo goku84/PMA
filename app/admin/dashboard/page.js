@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, supabaseAdminAuth } from "@/lib/supabase";
-import { deleteAuthUser, updateAuthUserPassword } from "@/app/actions/admin";
+import { deleteAuthUser, updateAuthUserCredentials } from "@/app/actions/admin";
 import styles from "./dashboard.module.css";
 import {
   IconShield,
@@ -22,6 +22,8 @@ import {
   IconTrash,
   IconMenu2,
   IconListCheck,
+  IconEye,
+  IconEyeOff,
 } from "@tabler/icons-react";
 
 const getLocalToday = () => {
@@ -52,6 +54,7 @@ export default function AdminDashboard() {
     userid: "",
     password: ""
   });
+  const [showAddEmpPassword, setShowAddEmpPassword] = useState(false);
   const [empFilterSearch, setEmpFilterSearch] = useState("");
   const [attFilterFrom, setAttFilterFrom] = useState(getLocalToday());
   const [attFilterTo, setAttFilterTo] = useState(getLocalToday());
@@ -308,13 +311,21 @@ export default function AdminDashboard() {
     try {
       if (editId) {
         const existingEmp = employeesSnap.find(emp => emp.id === editId);
-        if (existingEmp && existingEmp.auth_user_id && newEmp.password) {
-          try {
-            const res = await updateAuthUserPassword(existingEmp.auth_user_id, newEmp.password);
-            if (res?.error) throw new Error(res.error);
-          } catch (authError) {
-            console.error("Error updating auth user password:", authError);
-            alert("Warning: Could not update Supabase Auth password. " + authError.message);
+        if (existingEmp && existingEmp.auth_user_id) {
+          const authUpdates = {};
+          if (newEmp.password) authUpdates.password = newEmp.password;
+          if (newEmp.email && newEmp.email !== existingEmp.email) {
+            authUpdates.email = newEmp.email;
+            authUpdates.email_confirm = true;
+          }
+          if (Object.keys(authUpdates).length > 0) {
+            try {
+              const res = await updateAuthUserCredentials(existingEmp.auth_user_id, authUpdates);
+              if (res?.error) throw new Error(res.error);
+            } catch (authError) {
+              console.error("Error updating auth user credentials:", authError);
+              alert("Warning: Could not update Supabase Auth user. " + authError.message);
+            }
           }
         }
 
@@ -1979,7 +1990,39 @@ export default function AdminDashboard() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
                 <div className="fg"><label>User ID *</label><input type="text" value={newEmp.userid} onChange={(e) => setNewEmp({...newEmp, userid: e.target.value})} required /></div>
-                <div className="fg"><label>Password *</label><input type="password" value={newEmp.password} onChange={(e) => setNewEmp({...newEmp, password: e.target.value})} required /></div>
+                <div className="fg">
+                  <label>Password *</label>
+                  <div style={{ position: 'relative' }}>
+                    <input 
+                      type={showAddEmpPassword ? "text" : "password"} 
+                      value={newEmp.password} 
+                      onChange={(e) => setNewEmp({...newEmp, password: e.target.value})} 
+                      required 
+                      style={{ width: "100%", paddingRight: "40px" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAddEmpPassword(!showAddEmpPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--tx2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0
+                      }}
+                      aria-label={showAddEmpPassword ? "Hide password" : "Show password"}
+                    >
+                      {showAddEmpPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+                    </button>
+                  </div>
+                </div>
               </div>
               <button type="submit" className="btn btn-p" style={{ width: "100%", marginTop: "10px" }}>{editId ? "Update Employee" : "Save Employee"}</button>
             </form>
