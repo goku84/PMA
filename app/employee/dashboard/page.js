@@ -427,7 +427,7 @@ export default function EmployeeDashboard() {
   if (totalCallCount >= 20) allCallPoints = 5;
   else if (totalCallCount >= 16) allCallPoints = 2;
   const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
-  const allShopPoints = Math.floor(shopsSnap.filter(s => s.status === 'verified').length / 100) * 50;
+  const allShopPoints = Math.floor(shopsSnap.filter(s => s.status === 'verified').length / 100) * 75;
 
   let allTargetPoints = 0;
   if (tasksSnap) {

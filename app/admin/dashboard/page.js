@@ -1060,6 +1060,7 @@ export default function AdminDashboard() {
   };
 
   const handleVerifyCall = async (id) => {
+    if (!window.confirm("Are you sure you want to verify this productive call?")) return;
     try {
       const { error } = await supabase.from('calls').update({ status: "Verified" }).eq('id', id);
       if (error) {
@@ -1242,6 +1243,7 @@ export default function AdminDashboard() {
     } catch (e) { console.error(e); }
   };
   const handleVerifyShop = async (id) => {
+    if (!window.confirm("Are you sure you want to verify this shop?")) return;
     try {
       const { error } = await supabase.from('shops').update({ status: "verified" }).eq('id', id);
       if (error) {
@@ -1404,6 +1406,7 @@ export default function AdminDashboard() {
   };
 
   const handleApproveReportWithPoints = async (id) => {
+    if (!window.confirm("Are you sure you want to approve this report with points?")) return;
     try {
       const { error } = await supabase.from('reports').update({ status: "approved" }).eq('id', id);
       if (error) {
@@ -1417,6 +1420,7 @@ export default function AdminDashboard() {
   };
 
   const handleApproveReportWithoutPoints = async (id) => {
+    if (!window.confirm("Are you sure you want to approve this report without points?")) return;
     try {
       const { error } = await supabase.from('reports').update({ status: "approved_no_points" }).eq('id', id);
       if (error) {
