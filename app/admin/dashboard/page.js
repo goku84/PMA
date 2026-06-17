@@ -996,6 +996,17 @@ export default function AdminDashboard() {
       return tB - tA;
     });
 
+    const calcDuration = (d) => {
+      if (!d.in || !d.in.seconds) return "—";
+      const inMs = d.in.seconds * 1000;
+      const outMs = d.out ? d.out.seconds * 1000 : null;
+      if (!outMs) return "Active";
+      const totalMins = Math.floor((outMs - inMs) / 60000);
+      const h = Math.floor(totalMins / 60);
+      const m = totalMins % 60;
+      return `${h}h ${String(m).padStart(2, "0")}m`;
+    };
+
     const uniqueEmails = new Set(filteredAttList.map(d => d.email)).size;
     const totalEmps = Math.max(metricsMatrix.length, 1);
     const attRate = Math.round((uniqueEmails / totalEmps) * 100);
@@ -1018,7 +1029,7 @@ export default function AdminDashboard() {
           </div>
           <div className="tw">
             <table>
-              <thead><tr><th>Date</th><th>Employee Name</th><th>Employee Email</th><th>Check In Time</th><th>In Photo</th><th>Check Out Time</th><th>Out Photo</th><th>Status</th></tr></thead>
+              <thead><tr><th>Date</th><th>Employee Name</th><th>Employee Email</th><th>Check In Time</th><th>In Photo</th><th>Check Out Time</th><th>Out Photo</th><th>Duration</th><th>Status</th></tr></thead>
               <tbody>
                 {filteredAttList.length > 0 ? filteredAttList.map((d, i) => {
                   let dStr = "—";
@@ -1047,10 +1058,11 @@ export default function AdminDashboard() {
                           </a>
                         ) : "—"}
                       </td>
+                      <td style={{ fontFamily: "var(--font-dm-mono)", fontWeight: 700, color: d.out ? "var(--ok)" : "var(--am)" }}>{calcDuration(d)}</td>
                       <td><span className={`bdg ${d.out ? 'b-am' : 'b-ok'}`}>{d.out ? 'Shift Closed' : 'Active Duty'}</span></td>
                     </tr>
                   );
-                }) : <tr><td colSpan="8" style={{ textAlign: "center", color: "var(--tx3)" }}>No logs found for criteria.</td></tr>}
+                }) : <tr><td colSpan="9" style={{ textAlign: "center", color: "var(--tx3)" }}>No logs found for criteria.</td></tr>}
               </tbody>
             </table>
           </div>

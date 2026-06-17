@@ -476,13 +476,7 @@ export default function EmployeeDashboard() {
   const renderDashboard = () => {
     const todayAtt = attSnap.find((d) => d.date === todayStr);
 
-    let shiftHrs = 0;
-    if (todayAtt && todayAtt.in && todayAtt.in.seconds) {
-      const inTime = todayAtt.in.seconds * 1000;
-      const outTime = todayAtt.out ? todayAtt.out.seconds * 1000 : Date.now();
-      shiftHrs = (outTime - inTime) / (1000 * 60 * 60);
-    }
-    const shiftPercent = Math.min(100, (shiftHrs / 6) * 100);
+
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -580,15 +574,7 @@ export default function EmployeeDashboard() {
                   </div>
                 )}
 
-                <div style={{ marginTop: "40px", textAlign: "left" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--tx2)", marginBottom: "8px" }}>
-                    <span>Shift Progress</span>
-                    <span>{Math.floor(shiftHrs)}:{Math.floor((shiftHrs % 1) * 60).toString().padStart(2, '0')} / 6:00 hrs</span>
-                  </div>
-                  <div className="pt" style={{ height: "10px", background: "var(--bdr)", borderRadius: "10px", overflow: "hidden" }}>
-                    <div className="pf" style={{ width: `${shiftPercent}%`, height: "100%", background: todayAtt && !todayAtt.out ? "var(--ok)" : "var(--tx2)" }}></div>
-                  </div>
-                </div>
+
               </div>
             </div>
 
@@ -618,14 +604,7 @@ export default function EmployeeDashboard() {
     const todayStr = realToday.toISOString().split("T")[0];
     const todayAtt = attSnap.find((d) => d.date === todayStr);
 
-    // Calculate shift progress
-    let shiftHrs = 0;
-    if (todayAtt && todayAtt.in && todayAtt.in.seconds) {
-      const inTime = todayAtt.in.seconds * 1000;
-      const outTime = todayAtt.out ? todayAtt.out.seconds * 1000 : Date.now();
-      shiftHrs = (outTime - inTime) / (1000 * 60 * 60);
-    }
-    const shiftPercent = Math.min(100, (shiftHrs / 6) * 100);
+
 
     // Calendar setup
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -653,29 +632,22 @@ export default function EmployeeDashboard() {
       if (new Date(calYear, calMonth, d).getDay() === 0) return "Holiday";
       const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const rec = attSnap.find((a) => a.date === dateStr);
-      if (rec) {
-        let hrs = 0;
-        if (rec.in && rec.in.seconds) {
-          const inTime = rec.in.seconds * 1000;
-          const outTime = rec.out ? rec.out.seconds * 1000 : Date.now();
-          hrs = (outTime - inTime) / (1000 * 60 * 60);
-        }
-        if (hrs < 6) return "Partial";
-        return "Present";
-      }
+      if (rec) return "Present";
       return "Absent";
     };
 
-    const logsWithDynStatus = attSnap.map(d => {
-      let dynStatus = d.status;
-      if (d.status === "present" && d.in && d.in.seconds) {
-        const inTime = d.in.seconds * 1000;
-        const outTime = d.out ? d.out.seconds * 1000 : Date.now();
-        const hrs = (outTime - inTime) / (1000 * 60 * 60);
-        if (hrs < 6) dynStatus = "partial";
-      }
-      return { ...d, dynStatus };
-    });
+    const calcDuration = (d) => {
+      if (!d.in || !d.in.seconds) return "—";
+      const inMs = d.in.seconds * 1000;
+      const outMs = d.out ? d.out.seconds * 1000 : null;
+      if (!outMs) return "Active";
+      const totalMins = Math.floor((outMs - inMs) / 60000);
+      const h = Math.floor(totalMins / 60);
+      const m = totalMins % 60;
+      return `${h}h ${String(m).padStart(2, "0")}m`;
+    };
+
+    const logsWithDynStatus = attSnap.map(d => ({ ...d, dynStatus: d.status }));
 
     const filteredLogs = logsWithDynStatus.filter(d => {
       if (filterFrom && d.date < filterFrom) return false;
@@ -708,7 +680,6 @@ export default function EmployeeDashboard() {
                 let color = "var(--tx)";
                 if (status === "Present") { bg = "rgba(76, 175, 80, 0.15)"; color = "var(--ok)"; }
                 else if (status === "Absent") { bg = "rgba(244, 67, 54, 0.15)"; color = "var(--no)"; }
-                else if (status === "Partial") { bg = "rgba(255, 152, 0, 0.15)"; color = "var(--am)"; }
                 else if (status === "Holiday") { bg = "rgba(148, 163, 184, 0.15)"; color = "var(--tx2)"; }
                 return (
                   <div key={d} style={{ padding: "10px 2px", textAlign: "center", background: bg, minHeight: "75px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: isToday(d) ? "2px solid var(--ind)" : "none" }}>
@@ -722,7 +693,6 @@ export default function EmployeeDashboard() {
           </div>
           <div style={{ display: "flex", gap: "12px", marginTop: "16px", flexWrap: "wrap" }}>
             <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(76, 175, 80, 0.15)", color: "var(--ok)", fontWeight: 600 }}>Present</span>
-            <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(255, 152, 0, 0.15)", color: "var(--am)", fontWeight: 600 }}>Partial</span>
             <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(244, 67, 54, 0.15)", color: "var(--no)", fontWeight: 600 }}>Absent</span>
             <span style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "12px", background: "rgba(148, 163, 184, 0.15)", color: "var(--tx2)", fontWeight: 600 }}>Holiday</span>
           </div>
@@ -737,7 +707,6 @@ export default function EmployeeDashboard() {
               <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--bdr)", background: "var(--sur2)", color: "var(--tx)" }}>
                 <option value="all">All</option>
                 <option value="present">Present</option>
-                <option value="partial">Partial</option>
                 <option value="absent">Absent</option>
               </select>
             </div>
@@ -749,6 +718,7 @@ export default function EmployeeDashboard() {
                   <th>Date</th>
                   <th>Check In</th>
                   <th>Check Out</th>
+                  <th>Duration</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -763,14 +733,17 @@ export default function EmployeeDashboard() {
                       <td style={{ fontFamily: "var(--font-dm-mono)" }}>
                         {d.out ? new Date(d.out.seconds * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                       </td>
+                      <td style={{ fontFamily: "var(--font-dm-mono)", fontWeight: 600, color: "var(--tx2)" }}>
+                        {calcDuration(d)}
+                      </td>
                       <td>
-                        <span className={`bdg ${d.dynStatus === "present" ? "b-ok" : d.dynStatus === "partial" ? "b-am" : "b-no"}`}>{d.dynStatus}</span>
+                        <span className={`bdg ${d.dynStatus === "present" ? "b-ok" : "b-no"}`}>{d.dynStatus}</span>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="4" style={{ textAlign: "center", color: "var(--tx3)" }}>
+                    <td colSpan="5" style={{ textAlign: "center", color: "var(--tx3)" }}>
                       No logs found.
                     </td>
                   </tr>
