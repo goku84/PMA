@@ -200,20 +200,23 @@ export default function AdminDashboard() {
         }
       });
 
+      // Group verified calls by employee+day, then award pts per qualifying day
+      const callsByEmpDay = {};
       mapCalls.forEach((d) => {
-        if (d.loggedBy && metricsMap[d.loggedBy]) {
-          if (d.status === "Verified") {
-            const numCalls = d.durationMinutes || 0;
-            metricsMap[d.loggedBy].callCount += numCalls;
-          }
+        if (d.loggedBy && metricsMap[d.loggedBy] && d.status === "Verified" && d.timestamp && d.timestamp.seconds) {
+          const dt = new Date(d.timestamp.seconds * 1000);
+          dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+          const dayKey = dt.toISOString().split("T")[0];
+          const empDayKey = `${d.loggedBy}__${dayKey}`;
+          callsByEmpDay[empDayKey] = (callsByEmpDay[empDayKey] || { email: d.loggedBy, count: 0 });
+          callsByEmpDay[empDayKey].count += (d.durationMinutes || 0);
         }
       });
-      Object.keys(metricsMap).forEach((email) => {
-        let pts = 0;
-        const totalVerified = metricsMap[email].callCount;
-        if (totalVerified >= 20) pts = 5;
-        else if (totalVerified >= 16) pts = 2;
-        metricsMap[email].callPts = pts;
+      Object.values(callsByEmpDay).forEach(({ email, count }) => {
+        if (metricsMap[email]) {
+          if (count >= 20) metricsMap[email].callPts += 5;
+          else if (count >= 16) metricsMap[email].callPts += 2;
+        }
       });
 
       const getSalaryMonthRangeStr = () => {
@@ -567,6 +570,8 @@ export default function AdminDashboard() {
 
     let totalCalls = 0;
     let chartCalls = 0;
+    // Group verified calls by employee+day, then award pts per qualifying day
+    const dCallsByEmpDay = {};
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
@@ -577,17 +582,24 @@ export default function AdminDashboard() {
             if (chartEmpFilter === "all" || d.loggedBy === chartEmpFilter) chartCalls += numCalls;
             if (d.loggedBy && dMetricsMap[d.loggedBy]) {
               dMetricsMap[d.loggedBy].callCount += numCalls;
+              if (d.timestamp && d.timestamp.seconds) {
+                const dt = new Date(d.timestamp.seconds * 1000);
+                dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+                const dayKey = dt.toISOString().split("T")[0];
+                const empDayKey = `${d.loggedBy}__${dayKey}`;
+                dCallsByEmpDay[empDayKey] = (dCallsByEmpDay[empDayKey] || { email: d.loggedBy, count: 0 });
+                dCallsByEmpDay[empDayKey].count += numCalls;
+              }
             }
           }
         }
       });
     }
-    Object.keys(dMetricsMap).forEach((email) => {
-      let pts = 0;
-      const totalVerified = dMetricsMap[email].callCount;
-      if (totalVerified >= 20) pts = 5;
-      else if (totalVerified >= 16) pts = 2;
-      dMetricsMap[email].callPts = pts;
+    Object.values(dCallsByEmpDay).forEach(({ email, count }) => {
+      if (dMetricsMap[email]) {
+        if (count >= 20) dMetricsMap[email].callPts += 5;
+        else if (count >= 16) dMetricsMap[email].callPts += 2;
+      }
     });
 
     let verifiedShops = 0;
@@ -1654,25 +1666,32 @@ export default function AdminDashboard() {
       };
     });
 
+    // Group verified calls by employee+day, award pts per qualifying day
+    const lbCallsByEmpDay = {};
     if (callsSnap) {
       callsSnap.forEach(doc => {
         const d = doc.data();
         if (d.loggedBy !== "pmajagan@gmail.com" && isWithinRange(d.timestamp)) {
-          if (d.status === "Verified") {
-            if (d.loggedBy && dMetricsMap[d.loggedBy]) {
-              const numCalls = d.durationMinutes || 0;
-              dMetricsMap[d.loggedBy].callCount += numCalls;
+          if (d.status === "Verified" && d.loggedBy && dMetricsMap[d.loggedBy]) {
+            const numCalls = d.durationMinutes || 0;
+            dMetricsMap[d.loggedBy].callCount += numCalls;
+            if (d.timestamp && d.timestamp.seconds) {
+              const dt = new Date(d.timestamp.seconds * 1000);
+              dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+              const dayKey = dt.toISOString().split("T")[0];
+              const empDayKey = `${d.loggedBy}__${dayKey}`;
+              lbCallsByEmpDay[empDayKey] = (lbCallsByEmpDay[empDayKey] || { email: d.loggedBy, count: 0 });
+              lbCallsByEmpDay[empDayKey].count += numCalls;
             }
           }
         }
       });
     }
-    Object.keys(dMetricsMap).forEach((email) => {
-      let pts = 0;
-      const totalVerified = dMetricsMap[email].callCount;
-      if (totalVerified >= 20) pts = 5;
-      else if (totalVerified >= 16) pts = 2;
-      dMetricsMap[email].callPts = pts;
+    Object.values(lbCallsByEmpDay).forEach(({ email, count }) => {
+      if (dMetricsMap[email]) {
+        if (count >= 20) dMetricsMap[email].callPts += 5;
+        else if (count >= 16) dMetricsMap[email].callPts += 2;
+      }
     });
 
     if (shopsSnap) {

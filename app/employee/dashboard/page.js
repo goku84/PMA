@@ -417,15 +417,21 @@ export default function EmployeeDashboard() {
 
   // Points Calculation for Dashboard (All Time)
   const allAttPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
-  let totalCallCount = 0;
+  // Calculate call points per day (each day's total calls earns 2 or 5 pts)
+  const callsByDay = {};
   callsSnap.forEach(c => {
-    if (c.status === "Verified") {
-      totalCallCount += (c.durationMinutes || 0);
+    if (c.status === "Verified" && c.timestamp && c.timestamp.seconds) {
+      const dt = new Date(c.timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      const dayKey = dt.toISOString().split("T")[0];
+      callsByDay[dayKey] = (callsByDay[dayKey] || 0) + (c.durationMinutes || 0);
     }
   });
   let allCallPoints = 0;
-  if (totalCallCount >= 20) allCallPoints = 5;
-  else if (totalCallCount >= 16) allCallPoints = 2;
+  Object.values(callsByDay).forEach(dayTotal => {
+    if (dayTotal >= 20) allCallPoints += 5;
+    else if (dayTotal >= 16) allCallPoints += 2;
+  });
   const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
   const allShopPoints = Math.floor(shopsSnap.filter(s => s.status === 'verified').length / 100) * 75;
 
@@ -1353,15 +1359,23 @@ export default function EmployeeDashboard() {
     };
 
     const filteredAttPoints = attSnap.filter(a => isWithinPointFilter(a.timestamp)).reduce((acc, curr) => acc + (curr.points || 0), 0);
-    let filteredVerifiedCalls = 0;
+    // Group verified filtered calls by day, award pts per qualifying day
+    const filteredCallsByDay = {};
     callsSnap
       .filter(c => c.status === "Verified" && isWithinPointFilter(c.timestamp))
       .forEach(c => {
-        filteredVerifiedCalls += (c.durationMinutes || 0);
+        if (c.timestamp && c.timestamp.seconds) {
+          const dt = new Date(c.timestamp.seconds * 1000);
+          dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+          const dayKey = dt.toISOString().split("T")[0];
+          filteredCallsByDay[dayKey] = (filteredCallsByDay[dayKey] || 0) + (c.durationMinutes || 0);
+        }
       });
     let filteredCallPoints = 0;
-    if (filteredVerifiedCalls >= 20) filteredCallPoints = 5;
-    else if (filteredVerifiedCalls >= 16) filteredCallPoints = 2;
+    Object.values(filteredCallsByDay).forEach(dayTotal => {
+      if (dayTotal >= 20) filteredCallPoints += 5;
+      else if (dayTotal >= 16) filteredCallPoints += 2;
+    });
     const filteredRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved" && isWithinPointFilter(r.timestamp)).length * 15;
     let filteredMonthlyShopsCount = 0;
     shopsSnap.filter(s => s.status === 'verified' && isWithinPointFilter(s.timestamp)).forEach(() => {
