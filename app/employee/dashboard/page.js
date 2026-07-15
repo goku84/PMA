@@ -415,8 +415,43 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // Points Calculation for Dashboard (All Time)
-  const allAttPoints = attSnap.reduce((acc, curr) => acc + (curr.points || 0), 0);
+  // Points Calculation for Dashboard (Current Cycle)
+  const getSalaryMonthRangeStr = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    let startYear = d.getFullYear();
+    let startMonth = d.getMonth();
+    if (d.getDate() < 13) {
+      startMonth -= 1;
+      if (startMonth < 0) {
+        startMonth = 11;
+        startYear -= 1;
+      }
+    }
+    let endMonth = startMonth + 1;
+    let endYear = startYear;
+    if (endMonth > 11) {
+      endMonth = 0;
+      endYear += 1;
+    }
+    const startStr = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-13`;
+    const endStr = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-12`;
+    return { startStr, endStr };
+  };
+
+  const { startStr: currentMonthStart, endStr: currentMonthEnd } = getSalaryMonthRangeStr();
+
+  const isCurrentCycle = (timestamp, fallbackDateStr) => {
+    let dateStr = fallbackDateStr;
+    if (timestamp && timestamp.seconds) {
+      const dt = new Date(timestamp.seconds * 1000);
+      dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+      dateStr = dt.toISOString().split("T")[0];
+    }
+    return dateStr && dateStr >= currentMonthStart && dateStr <= currentMonthEnd;
+  };
+
+  const allAttPoints = attSnap.filter(a => isCurrentCycle(a.timestamp, a.date)).reduce((acc, curr) => acc + (curr.points || 0), 0);
   // Calculate call points per day (each day's total calls earns 2 or 5 pts)
   const callsByDay = {};
   callsSnap.forEach(c => {
@@ -424,7 +459,9 @@ export default function EmployeeDashboard() {
       const dt = new Date(c.timestamp.seconds * 1000);
       dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
       const dayKey = dt.toISOString().split("T")[0];
-      callsByDay[dayKey] = (callsByDay[dayKey] || 0) + (c.durationMinutes || 0);
+      if (dayKey >= currentMonthStart && dayKey <= currentMonthEnd) {
+        callsByDay[dayKey] = (callsByDay[dayKey] || 0) + (c.durationMinutes || 0);
+      }
     }
   });
   let allCallPoints = 0;
@@ -432,12 +469,12 @@ export default function EmployeeDashboard() {
     if (dayTotal >= 20) allCallPoints += 5;
     else if (dayTotal >= 16) allCallPoints += 2;
   });
-  const allRepPoints = repsSnap.filter(r => r.type === "weekly" && r.status === "approved").length * 15;
-  const allShopPoints = Math.floor(shopsSnap.filter(s => s.status === 'verified').length / 100) * 75;
+  const allRepPoints = repsSnap.filter(r => isCurrentCycle(r.timestamp) && r.type === "weekly" && r.status === "approved").length * 15;
+  const allShopPoints = Math.floor(shopsSnap.filter(s => isCurrentCycle(s.timestamp) && s.status === 'verified').length / 100) * 75;
 
   let allTargetPoints = 0;
   if (tasksSnap) {
-    tasksSnap.forEach(task => {
+    tasksSnap.filter(t => isCurrentCycle(t.timestamp)).forEach(task => {
       let achievedCBs = 0;
       if (repsSnap) {
         repsSnap.forEach(rep => {

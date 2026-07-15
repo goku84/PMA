@@ -74,7 +74,7 @@ export default function AdminDashboard() {
   const [expandedRepEmp, setExpandedRepEmp] = useState({});
   const [chartEmpFilter, setChartEmpFilter] = useState("all");
   const [employeesSnap, setEmployeesSnap] = useState([]);
-  const [dashFilterType, setDashFilterType] = useState("all");
+  const [dashFilterType, setDashFilterType] = useState("month");
   const [dashFilterFrom, setDashFilterFrom] = useState(getLocalToday());
   const [dashFilterTo, setDashFilterTo] = useState(getLocalToday());
   const [taskSearch, setTaskSearch] = useState("");
@@ -89,7 +89,7 @@ export default function AdminDashboard() {
     cgs_count: ""
   });
 
-  const [leaderFilterType, setLeaderFilterType] = useState("all");
+  const [leaderFilterType, setLeaderFilterType] = useState("month");
   const [leaderFilterFrom, setLeaderFilterFrom] = useState(getLocalToday());
   const [leaderFilterTo, setLeaderFilterTo] = useState(getLocalToday());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -168,6 +168,31 @@ export default function AdminDashboard() {
 
       const metricsMap = {};
 
+      const getSalaryMonthRangeStr = () => {
+        const d = new Date();
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        let startYear = d.getFullYear();
+        let startMonth = d.getMonth();
+        if (d.getDate() < 13) {
+          startMonth -= 1;
+          if (startMonth < 0) {
+            startMonth = 11;
+            startYear -= 1;
+          }
+        }
+        let endMonth = startMonth + 1;
+        let endYear = startYear;
+        if (endMonth > 11) {
+          endMonth = 0;
+          endYear += 1;
+        }
+        const startStr = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-13`;
+        const endStr = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-12`;
+        return { startStr, endStr };
+      };
+
+      const { startStr: currentMonthStart, endStr: currentMonthEnd } = getSalaryMonthRangeStr();
+
       empData.forEach((data) => {
         if (data.role === "admin" || data.email === "pmajagan@gmail.com") return;
 
@@ -195,8 +220,11 @@ export default function AdminDashboard() {
 
       mapAtt.forEach((d) => {
         if (metricsMap[d.email]) {
-          metricsMap[d.email].attCount++;
-          metricsMap[d.email].attPts += (d.points || 0);
+          const dateStr = d.date || (d.timestamp ? new Date(d.timestamp.seconds * 1000).toISOString().split("T")[0] : null);
+          if (dateStr && dateStr >= currentMonthStart && dateStr <= currentMonthEnd) {
+            metricsMap[d.email].attCount++;
+            metricsMap[d.email].attPts += (d.points || 0);
+          }
         }
       });
 
@@ -206,10 +234,13 @@ export default function AdminDashboard() {
         if (d.loggedBy && metricsMap[d.loggedBy] && d.status === "Verified" && d.timestamp && d.timestamp.seconds) {
           const dt = new Date(d.timestamp.seconds * 1000);
           dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-          const dayKey = dt.toISOString().split("T")[0];
-          const empDayKey = `${d.loggedBy}__${dayKey}`;
-          callsByEmpDay[empDayKey] = (callsByEmpDay[empDayKey] || { email: d.loggedBy, count: 0 });
-          callsByEmpDay[empDayKey].count += (d.durationMinutes || 0);
+          const dateStr = dt.toISOString().split("T")[0];
+          if (dateStr >= currentMonthStart && dateStr <= currentMonthEnd) {
+            const dayKey = dateStr;
+            const empDayKey = `${d.loggedBy}__${dayKey}`;
+            callsByEmpDay[empDayKey] = (callsByEmpDay[empDayKey] || { email: d.loggedBy, count: 0 });
+            callsByEmpDay[empDayKey].count += (d.durationMinutes || 0);
+          }
         }
       });
       Object.values(callsByEmpDay).forEach(({ email, count }) => {
@@ -218,31 +249,6 @@ export default function AdminDashboard() {
           else if (count >= 16) metricsMap[email].callPts += 2;
         }
       });
-
-      const getSalaryMonthRangeStr = () => {
-        const d = new Date();
-        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-        let startYear = d.getFullYear();
-        let startMonth = d.getMonth();
-        if (d.getDate() < 11) {
-          startMonth -= 1;
-          if (startMonth < 0) {
-            startMonth = 11;
-            startYear -= 1;
-          }
-        }
-        let endMonth = startMonth + 1;
-        let endYear = startYear;
-        if (endMonth > 11) {
-          endMonth = 0;
-          endYear += 1;
-        }
-        const startStr = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-11`;
-        const endStr = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-10`;
-        return { startStr, endStr };
-      };
-
-      const { startStr: currentMonthStart, endStr: currentMonthEnd } = getSalaryMonthRangeStr();
 
       mapShops.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy] && d.status === "verified") {
@@ -260,10 +266,15 @@ export default function AdminDashboard() {
 
       mapReps.forEach((d) => {
         if (d.loggedBy && metricsMap[d.loggedBy]) {
-          if (d.status === "approved" || d.status === "approved_no_points") {
-            metricsMap[d.loggedBy].reportCount++;
-            if (d.status === "approved" && d.type === "weekly") {
-              metricsMap[d.loggedBy].reportPts += 15;
+          const dt = d.timestamp ? new Date(d.timestamp.seconds * 1000) : new Date();
+          dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+          const dateStr = dt.toISOString().split("T")[0];
+          if (dateStr >= currentMonthStart && dateStr <= currentMonthEnd) {
+            if (d.status === "approved" || d.status === "approved_no_points") {
+              metricsMap[d.loggedBy].reportCount++;
+              if (d.status === "approved" && d.type === "weekly") {
+                metricsMap[d.loggedBy].reportPts += 15;
+              }
             }
           }
         }
@@ -272,20 +283,25 @@ export default function AdminDashboard() {
       const todayStr = getLocalToday();
       (tasksRes.data || []).forEach(task => {
         if (metricsMap[task.employee_email]) {
-          let achievedCBs = 0;
-          mapReps.forEach(rep => {
-            if (rep.loggedBy === task.employee_email && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
-              const { from_date, to_date, cb_count } = extractReportData(rep);
-              if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
-                achievedCBs += cb_count;
+          const taskDt = task.created_at ? new Date(task.created_at) : new Date();
+          taskDt.setMinutes(taskDt.getMinutes() - taskDt.getTimezoneOffset());
+          const taskDateStr = taskDt.toISOString().split("T")[0];
+          if (taskDateStr >= currentMonthStart && taskDateStr <= currentMonthEnd) {
+            let achievedCBs = 0;
+            mapReps.forEach(rep => {
+              if (rep.loggedBy === task.employee_email && (rep.status === 'approved' || rep.status === 'approved_no_points')) {
+                const { from_date, to_date, cb_count } = extractReportData(rep);
+                if (from_date && to_date && from_date >= task.from_date && to_date <= task.to_date) {
+                  achievedCBs += cb_count;
+                }
               }
-            }
-          });
-          const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
-          let pts = 0;
-          if (percent >= 100) pts = 100;
-          else if (percent >= 90) pts = 75;
-          metricsMap[task.employee_email].targetPts += pts;
+            });
+            const percent = task.cgs_count > 0 ? Math.floor((achievedCBs / task.cgs_count) * 100) : 0;
+            let pts = 0;
+            if (percent >= 100) pts = 100;
+            else if (percent >= 90) pts = 75;
+            metricsMap[task.employee_email].targetPts += pts;
+          }
         }
       });
 
@@ -299,6 +315,30 @@ export default function AdminDashboard() {
       });
 
       setMetricsMatrix(finalLeaderboard.sort((a, b) => b.totalPoints - a.totalPoints));
+      
+      // SILENT ADMIN TRIGGER: Option C - Backup today's points in the background
+      try {
+        const todayStr = getLocalToday();
+        const backupData = finalLeaderboard.map(emp => ({
+          employee_email: emp.email,
+          date_logged: todayStr,
+          total_points: emp.totalPoints || 0,
+          calls_points: emp.callPts || 0,
+          shops_points: emp.shopPts || 0,
+          reports_points: emp.reportPts || 0,
+          targets_points: emp.targetPts || 0
+        }));
+        
+        // Fire and forget (runs completely in background, doesn't block UI)
+        supabase.from('points_backup').upsert(backupData, { 
+          onConflict: 'employee_email, date_logged' 
+        }).then(({ error }) => {
+          if (error) console.error("Silent Backup Error:", error.message);
+        });
+      } catch (err) {
+        console.error("Backup trigger failed silently:", err);
+      }
+
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -744,7 +784,7 @@ export default function AdminDashboard() {
               <option value="today">Today</option>
               <option value="yesterday">Yesterday</option>
               <option value="week">This Week</option>
-              <option value="month">This Month</option>
+              <option value="month">Current Cycle (13th-12th)</option>
               <option value="year">This Year</option>
               <option value="custom">Custom Date Range</option>
             </select>
@@ -1619,14 +1659,14 @@ export default function AdminDashboard() {
       } else if (filterType === "month") {
         let startYear = today.getFullYear();
         let startMonth = today.getMonth();
-        if (today.getDate() < 11) {
+        if (today.getDate() < 13) {
           startMonth -= 1;
           if (startMonth < 0) {
             startMonth = 11;
             startYear -= 1;
           }
         }
-        from = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-11`;
+        from = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-13`;
 
         let endMonth = startMonth + 1;
         let endYear = startYear;
@@ -1634,7 +1674,7 @@ export default function AdminDashboard() {
           endMonth = 0;
           endYear += 1;
         }
-        to = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-10`;
+        to = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-12`;
       } else if (filterType === "year") {
         const s = new Date(today.getFullYear(), 0, 1);
         s.setMinutes(s.getMinutes() - s.getTimezoneOffset());
@@ -1885,7 +1925,7 @@ export default function AdminDashboard() {
               <option value="today">Today</option>
               <option value="yesterday">Yesterday</option>
               <option value="week">This Week</option>
-              <option value="month">This Month</option>
+              <option value="month">Current Cycle (13th-12th)</option>
               <option value="year">This Year</option>
               <option value="custom">Custom Range</option>
             </select>
