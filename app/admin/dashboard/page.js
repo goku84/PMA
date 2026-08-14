@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase, supabaseAdminAuth } from "@/lib/supabase";
+import { supabase, supabaseAdminAuth, fetchAllRecords } from "@/lib/supabase";
 import { deleteAuthUser, updateAuthUserCredentials } from "@/app/actions/admin";
 import styles from "./dashboard.module.css";
 import {
@@ -118,6 +118,15 @@ export default function AdminDashboard() {
     };
   }, [router]);
 
+  useEffect(() => {
+    // Re-fetch data if any date filter changes and goes further back than what we might have fetched.
+    // For simplicity, just refetch everything when any of these change. 
+    // In a real app we'd debounce or check if the new filter requires more data.
+    if (!loading) {
+      fetchData();
+    }
+  }, [attFilterFrom, callFilterFrom, shopFilterFrom, repFilterFrom, dashFilterFrom, leaderFilterFrom]);
+
   const extractReportData = (rep) => {
     let from_date = rep.from_date;
     let to_date = rep.to_date;
@@ -144,13 +153,27 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
+      const localNow = new Date();
+      localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
+      
+      let startYear = localNow.getFullYear();
+      let startMonth = localNow.getMonth();
+      if (localNow.getDate() < 13) {
+        startMonth -= 1;
+        if (startMonth < 0) { startMonth = 11; startYear -= 1; }
+      }
+      const currentCycleStart = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-13`;
+      
+      const allStarts = [currentCycleStart, attFilterFrom, callFilterFrom, shopFilterFrom, repFilterFrom, dashFilterFrom, leaderFilterFrom].filter(Boolean);
+      const minDate = allStarts.reduce((min, d) => (d < min ? d : min), allStarts[0]);
+
       const [empRes, attRes, callsRes, shopsRes, repsRes, tasksRes] = await Promise.all([
-        supabase.from('employees').select('*'),
-        supabase.from('attendance').select('*'),
-        supabase.from('calls').select('*'),
-        supabase.from('shops').select('*'),
-        supabase.from('reports').select('*'),
-        supabase.from('tasks').select('*')
+        fetchAllRecords(supabase.from('employees').select('*')),
+        fetchAllRecords(supabase.from('attendance').select('*').gte('date', minDate)),
+        fetchAllRecords(supabase.from('calls').select('*').gte('created_at', minDate)),
+        fetchAllRecords(supabase.from('shops').select('*').gte('created_at', minDate)),
+        fetchAllRecords(supabase.from('reports').select('*').gte('created_at', minDate)),
+        fetchAllRecords(supabase.from('tasks').select('*'))
       ]);
 
       const mapCalls = callsRes.data?.map(d => ({ ...d, customerName: d.customer_name, phoneNumber: d.phone_number, durationMinutes: d.duration_minutes, loggedBy: d.logged_by?.toLowerCase(), timestamp: d.created_at ? { seconds: new Date(d.created_at).getTime() / 1000 } : null })) || [];

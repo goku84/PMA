@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchAllRecords } from "@/lib/supabase";
+import { compressImage } from "@/lib/imageUtils";
 import {
   IconShield,
   IconLayoutDashboard,
@@ -97,7 +98,7 @@ export default function EmployeeDashboard() {
   const [repFilterTo, setRepFilterTo] = useState(getLocalToday());
   const [repFilterType, setRepFilterType] = useState("all");
 
-  const [pointFilterPeriod, setPointFilterPeriod] = useState("all");
+  const [pointFilterPeriod, setPointFilterPeriod] = useState("monthly");
   const [pointFilterFrom, setPointFilterFrom] = useState(getLocalToday());
   const [pointFilterTo, setPointFilterTo] = useState(getLocalToday());
 
@@ -181,13 +182,27 @@ export default function EmployeeDashboard() {
 
   const fetchData = async (user) => {
     try {
+      const localNow = new Date();
+      localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
+      
+      let startYear = localNow.getFullYear();
+      let startMonth = localNow.getMonth();
+      if (localNow.getDate() < 13) {
+        startMonth -= 1;
+        if (startMonth < 0) { startMonth = 11; startYear -= 1; }
+      }
+      const currentCycleStart = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-13`;
+      
+      const allStarts = [currentCycleStart, filterFrom, callFilterFrom, shopFilterFrom, repFilterFrom, pointFilterFrom].filter(Boolean);
+      const minDate = allStarts.reduce((min, d) => (d < min ? d : min), allStarts[0]);
+
       const [calls, shops, reps, att, employeeRes, tasksRes] = await Promise.all([
-        supabase.from('calls').select('*').ilike('logged_by', user.email),
-        supabase.from('shops').select('*').ilike('logged_by', user.email),
-        supabase.from('reports').select('*').ilike('logged_by', user.email),
-        supabase.from('attendance').select('*').ilike('email', user.email),
+        fetchAllRecords(supabase.from('calls').select('*').ilike('logged_by', user.email).gte('created_at', minDate)),
+        fetchAllRecords(supabase.from('shops').select('*').ilike('logged_by', user.email).gte('created_at', minDate)),
+        fetchAllRecords(supabase.from('reports').select('*').ilike('logged_by', user.email).gte('created_at', minDate)),
+        fetchAllRecords(supabase.from('attendance').select('*').ilike('email', user.email).gte('date', minDate)),
         supabase.from('employees').select('name').ilike('email', user.email).single(),
-        supabase.from('tasks').select('*').ilike('employee_email', user.email),
+        fetchAllRecords(supabase.from('tasks').select('*').ilike('employee_email', user.email)),
       ]);
 
       const allCalls = calls.data || [];
@@ -265,10 +280,11 @@ export default function EmployeeDashboard() {
 
     setIsUploading(true);
     try {
-      const fileName = `attendance/${Date.now()}_${file.name}`;
+      const compressedFile = await compressImage(file, 800, 0.7);
+      const fileName = `attendance/${Date.now()}_${compressedFile.name}`;
       const { data, error: uploadError } = await supabase.storage
         .from('images')
-        .upload(fileName, file);
+        .upload(fileName, compressedFile);
 
       if (uploadError) throw uploadError;
 
@@ -346,8 +362,9 @@ export default function EmployeeDashboard() {
       let imageUrl = null;
       const photoFile = fd.get("s_photo");
       if (photoFile && photoFile.size > 0) {
-        const fileName = `shops/${Date.now()}_${photoFile.name}`;
-        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, photoFile);
+        const compressedPhoto = await compressImage(photoFile, 800, 0.7);
+        const fileName = `shops/${Date.now()}_${compressedPhoto.name}`;
+        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, compressedPhoto);
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(fileName);
         imageUrl = publicUrl;
@@ -515,6 +532,36 @@ export default function EmployeeDashboard() {
       }
     }
   });
+
+  // SILENT EMPLOYEE TRIGGER: Option B - Backup today's points in the background
+  useEffect(() => {
+    if (!loading && activeUser && totalPoints !== undefined) {
+      try {
+        const d = new Date();
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        const tStr = d.toISOString().split("T")[0];
+        
+        const backupData = {
+          employee_email: activeUser.email,
+          date_logged: tStr,
+          total_points: totalPoints || 0,
+          calls_points: allCallPoints || 0,
+          shops_points: allShopPoints || 0,
+          reports_points: allRepPoints || 0,
+          targets_points: allTargetPoints || 0
+        };
+        
+        // Fire and forget
+        supabase.from('points_backup').upsert([backupData], { 
+          onConflict: 'employee_email, date_logged' 
+        }).then(({ error }) => {
+          if (error) console.error("Silent Backup Error:", error.message);
+        });
+      } catch (err) {
+        console.error("Backup trigger failed silently:", err);
+      }
+    }
+  }, [loading, activeUser, totalPoints, allCallPoints, allShopPoints, allRepPoints, allTargetPoints]);
 
   const renderDashboard = () => {
     const todayAtt = attSnap.find((d) => d.date === todayStr);
@@ -1359,8 +1406,7 @@ export default function EmployeeDashboard() {
         const weekStart = t.toISOString().split("T")[0];
         return dateStr >= weekStart && dateStr <= today;
       } else if (pointFilterPeriod === "monthly") {
-        const monthPrefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        return dateStr.startsWith(monthPrefix);
+        return dateStr >= currentMonthStart && dateStr <= currentMonthEnd;
       } else if (pointFilterPeriod === "yearly") {
         const yearPrefix = `${d.getFullYear()}`;
         return dateStr.startsWith(yearPrefix);
@@ -1384,8 +1430,7 @@ export default function EmployeeDashboard() {
         const weekStart = t.toISOString().split("T")[0];
         return dateStr >= weekStart && dateStr <= today;
       } else if (pointFilterPeriod === "monthly") {
-        const monthPrefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        return dateStr.startsWith(monthPrefix);
+        return dateStr >= currentMonthStart && dateStr <= currentMonthEnd;
       } else if (pointFilterPeriod === "yearly") {
         const yearPrefix = `${d.getFullYear()}`;
         return dateStr.startsWith(yearPrefix);
@@ -1439,7 +1484,7 @@ export default function EmployeeDashboard() {
               <option value="all">All Time</option>
               <option value="today">Today</option>
               <option value="this_week">This Week</option>
-              <option value="monthly">This Month</option>
+              <option value="monthly">Current Cycle (13th-12th)</option>
               <option value="yearly">This Year</option>
               <option value="custom">Custom Date Range</option>
             </select>
